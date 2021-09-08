@@ -68,6 +68,8 @@ Slowly but surely, I kept adding new functionality to the program. The result is
 
 This project is made up of the following files:
 
-WIM Tools.exe - Technically, this is the file needed.
-WIM Tools.bas - The source code. This is a plain text file and can be compiled with the QB64 compiler which can be found at www.qb64.org.
-WIM Tools User Guide.pdf - While help does exist within the program, this user guide may be a handy reference to familiarize you with the program.
+WIM Tools.exe - Technically, this is the file needed.  
+WIM Tools.bas - The source code. This is a plain text file and can be compiled with the QB64 compiler which can be found at www.qb64.org.  
+WIM Tools User Guide.pdf - While help does exist within the program, this user guide may be a handy reference to familiarize you with the program.  
+
+WIM_Tools.zip - Contains all the above files in a single archive.
