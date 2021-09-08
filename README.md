@@ -1,6 +1,10 @@
 # WIM-Tools
 WIM (Windows Image Management) Tools is a set of tools to create, modify, and manage your Windows images
 
+NOTE: You can download everything needed for this project by simply grabbing the WIM_Tools.zip.  
+Version: 18.1.5.164  
+Release Date: Sep 8, 2021  
+
 
 *****************************************************************
 * Here Are Of Some Of The Things That You Can Do With WIM Tools
