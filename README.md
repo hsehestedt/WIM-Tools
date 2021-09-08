@@ -1,6 +1,8 @@
 # WIM-Tools
 WIM (Windows Image Management) Tools is a set of tools to create, modify, and manage your Windows images
 
+< Bear with me. This project is just now being setup. Code that is ready should be available by Sep 9, 2021 >
+
 Here are of some of the things that you can do with WIM Tools:
 
 - Inject Windows updates into one or more editions of Windows (Home, Pro, Education, etc.) and then combine them all into a single Windows image.
