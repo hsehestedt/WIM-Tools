@@ -1,9 +1,10 @@
 # WIM-Tools
 WIM (Windows Image Management) Tools is a set of tools to create, modify, and manage your Windows images
 
-< Bear with me. This project is just now being setup. Code that is ready should be available by Sep 9, 2021 >
 
-Here are of some of the things that you can do with WIM Tools:
+*****************************************************************
+* Here Are Of Some Of The Things That You Can Do With WIM Tools *
+*****************************************************************
 
 - Inject Windows updates into one or more editions of Windows (Home, Pro, Education, etc.) and then combine them all into a single Windows image.
 
@@ -22,3 +23,46 @@ Here are of some of the things that you can do with WIM Tools:
 - Your images can include both x64 and x86 editions of Windows in the same image.
 
 - Several additional tools are included that will help you manage your WIM Tools projects.
+
+***********************
+* System Requirements *
+***********************
+
+WIM Tools will require that the Windows ADK be installed on your system. Only the "Deployment Tools" component needs to be installed. The program will display a warning when it is started if the ADK is not installed. However, it will continue to operate since some functions will work without the ADK. If the user selects a feature from the menu that requires the ADK, the user will be warned and returned to the main menu.
+
+You can download or install the Windows ADK from here:
+
+https://docs.microsoft.com/en-us/windows-hardware/get-started/adk-install
+
+Run the program locally, not from a network location. I have not tested the program or designed it to run from a network location. 
+
+When operating on multiple editions of Windows in the same project (for example, Win 10 Pro, Home, Education editions, etc.), this program is designed to work with editions of the same version. For example, you do not want to mix version 20H2 and 21H1 in the same project.
+
+No additional memory beyond the standard requirements for Windows is needed.
+
+We will need a minimum of three times the amount of space your largest project requires. For example, if you are woring a 10 GB Windows image, you will need
+
+- About 10 GB space to extract the image to your hard disk or SSD.
+- About 10 GB of temporary storage space to assemble your final project.
+- About 10 GB of space to store the final image.
+- When working with Windows updates or drivers to inject into your images, you will also need space for these elements.
+
+Note that these items do not all need to be located on the same drive.
+
+Please review the User Guide for additional information and details that will allow you to get the most out of this program.
+
+*********************************
+* About the Author and the Code *
+*********************************
+
+I am a Windows enthusiast who started with Windows way back in the '80s when Windows was first introduced. I was a Technical Support Engineer with Microsoft for over ten years. Recently, I've become interested in managing and deploying Windows using nothing but native Microsoft tools. Unfortunately, the management of Windows images can be extremely time consuming because of the sheer number of very lengthy commands that need to be run.
+
+This program began as a series of batch files that allowed me to experiment and slowly build upon each previous step. Eventually, I got tired of the awkward and time consuming experience of programming with batch files. I'm not a professional programmer and the time being wasted trying to work out some of the oddities of batch file programming was taking me away from progressing with other things. It was then that I discovered how simple it would be to script all the commands that I needed to run and at the same time create a far better user experience using QB64, especially since I had played extensivly with Microsoft's Quick BASIC before my Windows days. QB64 is very similar in many ways to the original Quick BASIC but provides the advantages of a modern compiler. Another nice thing is that the entire program resides within a single executable file with no additional support files needed.
+
+Slowly but surely, I kept adding new functionality to the program. The result is the collection of tools all contained within a single executable file that you will find here.
+
+This project is made up of the following files:
+
+WIM Tools.exe - Technically, this is the file needed.
+WIM Tools.bas - The source code. This is a plain text file and can be compiled with the QB64 compiler which can be found at www.qb64.org.
+WIM Tools User Guide.pdf - While help does exist within the program, this user guide may be a handy reference to familiarize you with the program.
