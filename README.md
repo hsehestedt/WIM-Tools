@@ -3,7 +3,7 @@ WIM (Windows Image Management) Tools is a set of tools to create, modify, and ma
 
 
 *****************************************************************
-* Here Are Of Some Of The Things That You Can Do With WIM Tools *
+* Here Are Of Some Of The Things That You Can Do With WIM Tools
 *****************************************************************
 
 - Inject Windows updates into one or more editions of Windows (Home, Pro, Education, etc.) and then combine them all into a single Windows image.
@@ -25,7 +25,7 @@ WIM (Windows Image Management) Tools is a set of tools to create, modify, and ma
 - Several additional tools are included that will help you manage your WIM Tools projects.
 
 ***********************
-* System Requirements *
+* System Requirements
 ***********************
 
 WIM Tools will require that the Windows ADK be installed on your system. Only the "Deployment Tools" component needs to be installed. The program will display a warning when it is started if the ADK is not installed. However, it will continue to operate since some functions will work without the ADK. If the user selects a feature from the menu that requires the ADK, the user will be warned and returned to the main menu.
@@ -52,7 +52,7 @@ Note that these items do not all need to be located on the same drive.
 Please review the User Guide for additional information and details that will allow you to get the most out of this program.
 
 *********************************
-* About the Author and the Code *
+* About the Author and the Code
 *********************************
 
 I am a Windows enthusiast who started with Windows way back in the '80s when Windows was first introduced. I was a Technical Support Engineer with Microsoft for over ten years. Recently, I've become interested in managing and deploying Windows using nothing but native Microsoft tools. Unfortunately, the management of Windows images can be extremely time consuming because of the sheer number of very lengthy commands that need to be run.
