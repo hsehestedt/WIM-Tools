@@ -1,0 +1,21 @@
+**********************************
+* Changes in the Current Release *
+**********************************
+
+v18.1.7.166 - In the newly rewritten "PAUSE" routine, we have 2 loops that wait for a key press and a key release. These loops were running at an unlimited speed which could cause high CPU utilization. Revised the code so that these loops run only 50 times per second.
+
+Files affected:
+
+WIM Dual Architecture 18.1.6.165.bas - QB64 Source Code
+WIM Dual Architecture 18.1.6.165.exe - Compiled Executable
+
+The following files are unchanged:
+
+ISO.ico
+WIM Tools User Guide.pdf
+
+**********************
+* Previous Releases: *
+**********************
+
+v18.1.6.165 - Rewrote the "pause" routine. This was a very simple routine that simply printed a blank line and then paused execution of the program until the user hit a key. The pause was accomplished by running the command line utility "pause" from a QB64 "shell" statement. For most purposes this is fine, except that it would not take input from the QB64 keyboard buffer. As a result, taking a series of commands and pasting them into the program would not work when a pause is encountered. This also has the potential to cause problems if we want to expand scripting capabilities in the future. The rewrite of this routine solves this.
