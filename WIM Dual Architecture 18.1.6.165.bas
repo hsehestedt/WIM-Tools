@@ -18,7 +18,7 @@ Option _Explicit
 Rem $DYNAMIC
 $ExeIcon:'iso.ico'
 $VersionInfo:CompanyName=Hannes Sehestedt
-$VersionInfo:FILEVERSION#=18,1,5,164
+$VersionInfo:FILEVERSION#=18,1,6,165
 $VersionInfo:ProductName=WIM Tools Dual Architecture Edition
 $VersionInfo:LegalCopyright=(c) 2021 by Hannes Sehestedt
 $Console:Only
@@ -81,8 +81,8 @@ End If
 Dim Shared ProgramVersion As String ' Holds the current program version. This is displayed in the console title throughout the program
 Dim ProgramReleaseDate As String
 
-ProgramVersion$ = "18.1.5.164"
-ProgramReleaseDate$ = "Sep 08, 2021"
+ProgramVersion$ = "18.1.6.165"
+ProgramReleaseDate$ = "Sep 16, 2021"
 
 
 ' ******************************************************************************************************************
@@ -11494,21 +11494,64 @@ End Sub
 
 Sub Pause
 
-    ' Displays one blank line and then the message "Press any key to contine"
+    ' Displays one blank line and then the message "Press any key to contine".
+    ' Previously we used a simple "shell pause" in this routine, but the problem with that method is that the
+    ' keyboard buffer from QB64 would not be read causing a series of pasted responses to halt when the "pause"
+    ' command was run via "shell". The routine below works around this issue.
+
+    Dim x As Integer ' Will be set to something other than "0" when keyboard input is available.
+    Dim keystroke As Integer
 
     Print
+    Print "Press any key to continue...";
 
-    ' PAUSE does not work when played back in a script. Since we have no intention of actually
-    ' pausing when a script is being run, we can work around this issue by simply not running the
-    ' "pause" command when a script is being played back.
-
-    If ScriptingChoice$ <> "P" Then Shell "pause"
+    ' If a script is being recorded, add an "Enter" to the script to continue past the pause.
 
     If ScriptingChoice$ = "R" Then
         Print #5, ":: Pressing <ENTER> to continue after a pause. This will show up as a blank line below."
         Print #5, ""
     End If
 
+    ' If a script is being played back, exit this subroutine since there is no need to pause when
+    ' a script is being run.
+
+    If ScriptingChoice$ = "P" Then Exit Sub
+
+    keystroke = 0
+
+    ' The below loop runs repeatedly until keyboard input is available
+
+    Do
+        x = 0 ' Clear x
+        x = _ConsoleInput ' x will become equal to "1" if keyboard input is available
+
+        ' The loop below is run when keyboard input is available
+
+        If x = 1 Then
+            keystroke = _CInp
+
+            ' When a key is pressed, "keystroke" will have a value greater than "0"
+
+            If keystroke > 0 Then
+
+                ' If we arrive here, a key was pressed. Now we wait until the key is released
+
+                Do
+                    x = 0
+                    x = _ConsoleInput
+
+                    If x = 1 Then
+                        keystroke = _CInp
+                    End If
+
+                Loop Until keystroke < 0 ' A released key returns a negative number. When "keystroke" is a negative number, the key was released.
+
+            End If
+
+        End If
+
+    Loop While keystroke = 0
+    Print
 End Sub
 
 
@@ -12883,4 +12926,11 @@ End Sub
 ' Refined the help message regarding the injection of an EI.CFG file to make the purpose of that file clearer. In addition, in other
 ' places in the program, when a user wants to see help, any response staring with the letter "H" would be acceptable to get help.
 ' This did not work for the prompt for an EI.CFG file. This has been changed to be more consistent with the rest of the program.
+'
+'18.1.6.165 - September 16, 2021
+' Rewrote the "pause" routine. This was a very simple routine that simply printed a blank line and then paused execution of the
+' program until the user hit a key. The pause was accomplished by running the command line utility "pause" from a QB64 "shell"
+' statement. For most purposes this is fine, except that it would not take input from the QB64 keyboard buffer. As a result,
+' taking a series of commands and pasting them into the program would not work when a pause is encountered. This also has the
+' potential to cause problems if we want to expand scripting capabilities in the future. The rewrite of this routine solves this.
 
