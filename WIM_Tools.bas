@@ -18,7 +18,7 @@ Option _Explicit
 Rem $DYNAMIC
 $ExeIcon:'iso.ico'
 $VersionInfo:CompanyName=Hannes Sehestedt
-$VersionInfo:FILEVERSION#=18,2,0,168
+$VersionInfo:FILEVERSION#=19,0,0,172
 $VersionInfo:ProductName=WIM Tools Dual Architecture Edition
 $VersionInfo:LegalCopyright=(c) 2021 by Hannes Sehestedt
 $Console:Only
@@ -88,8 +88,8 @@ End If
 Dim Shared ProgramVersion As String ' Holds the current program version. This is displayed in the console title throughout the program
 Dim ProgramReleaseDate As String
 
-ProgramVersion$ = "18.2.0.168"
-ProgramReleaseDate$ = "Sep 26, 2021"
+ProgramVersion$ = "19.0.0.172"
+ProgramReleaseDate$ = "Oct 05, 2021"
 
 
 ' ******************************************************************************************************************
@@ -123,6 +123,7 @@ Dim AnswerFilePresent As String
 Dim Arc As String ' Used to store architecture type in the routine to create a VHD
 Dim Architecture As Integer ' Flag that gets set to 1 for a single architecture image, 2 for dual architecture, and 0 if an invalid image
 Dim ArchitectureChoice As String ' Search code for ArchitectureChoice$ for a comment explaining usage
+Dim AutoSize As String ' Set to "Y" if the last partition is to be autosized to occupy all remaining space
 Dim AvailableSpace As Long ' Used for tracking available space on a disk
 Dim AvailableSpaceString As String ' Used for tracking available space on a disk
 Dim bcd_ff As Integer ' Holds a free file number for file access to BCD files
@@ -142,7 +143,7 @@ Dim DestinationFolder As String ' The destination folder where all the folders c
 Dim DestinationIsRemovable As Integer ' Flag to indicate if the originally specified destination is removable
 Dim DestinationPath As String ' The destination path for the ISO image without a file name
 Dim DestinationPathAndFile As String ' The full path including the file name of the ISO image to be created
-Dim DiskID As Integer ' Used in 2 places to ask the user for a DiskID as presented by the Microsoft DiskPart utility
+Dim DiskID As Integer ' Used in multiple places to ask the user for a DiskID as presented by the Microsoft DiskPart utility
 Dim DiskIDSearchString As String ' Holds a disk ID that will be searched for in the output of diskpart commands
 Dim DisplayUnit As String ' Holds "MB", "GB", or "TB" to indicate what units user is entering partition size in
 Dim DriveLetter As String ' Take a path and store the drive letter from that path (C:, D:, etc.) in this valiable to be used to determine if drive is removable or not
@@ -164,6 +165,7 @@ Dim FileLength As Single
 Dim FileSourceType As String
 Dim FinalImageName As String
 Dim FSType As String 'Set to either NTFS of EXFAT to determine what filesystem user wants to use
+Dim HideLetters As String ' Set to "Y" to indicate that drive letter for this partition should be removed
 Dim Highest_Single As Integer
 Dim Highest_x64 As Integer
 Dim Highest_x86 As Integer
@@ -196,13 +198,23 @@ Dim NameFromFile As String ' Holds the NAME field of an image parsed from WIM_In
 Dim NewLabel As String
 Dim NumberOfx64Updates As Integer
 Dim NumberOfx86Updates As Integer
+Dim Offset As Integer
 Dim OpsPendingFileCheck As String
+Dim OS_Count As Integer ' The number of operating systems to be added to an image (Note that number of partitions for OS will be 2 per OS)
+Dim OS_Partitions As Integer ' The number of Windows operating system partitions to be created on a GPT boot disk
+Dim Other_Partitions As Integer ' The number of non-bootable partitions to be created on a GPT boot disk
 Dim Other_Updates_Avail As String
 Dim OutputFileName As String ' For Windows multiboot image program, holds the final name of the ISO image to be created (file name and extension only, no path)
 Dim Override As String
+Dim ParSizeInMB As String ' Holds the size of a partition as a string
+Dim ParSize(0) As Long ' For a GPT boot media project, holds the size of each partition being created.
+Dim ParType(0) As String ' For a GPT boot media project, holds the file system type of each partition being created.
 Dim Par1InstancesFound As Integer
 Dim Par2InstancesFound As Integer
+Dim PartitionCounter As Integer ' used as a counter when processing partitions
+Dim PartitionDescription(0) As String ' Friendly description for each partition in a GPT boot media project
 Dim PE_Files_Avail As String
+Dim PE_Partitions As Integer ' The number of Windows PE based program partitions to be created on a GPT boot disk
 Dim ProjectArchitecture As String ' In Multiboot program, hold the overall project architecture type (x86, x64, or DUAL)
 Dim ProjectType As String
 Dim ReadLine As String
@@ -215,6 +227,7 @@ Dim Setup_DU As String ' Holds the location of the Setup Dynamic update file
 Dim SourceFolder As String ' Will hold a folder name
 Dim SourceFolderIsAFile As String ' If SourceFolder$ actually contains a filename rather than a path, set this to "Y", else set to "N"
 Dim SourceImage As String
+Dim SourcePath_Multi(0) As String ' Holds the source ISO image path in a GPT boot media project
 Dim SSU_Update_Avail As String
 Dim TempLong As Long
 Dim TempNumberOfFiles As Integer
@@ -474,7 +487,7 @@ Print "    1) Inject Windows updates into one or more Windows editions and creat
 Print "    2) Inject drivers into one or more Windows editions and create a multi edition bootable image               "
 Print "    3) Inject boot-critical drivers into one or more Windows editions and create a multi edition bootable image "
 Color 0, 10
-Print "    4) Make a bootable drive from a Windows ISO image or update an already existing drive                       "
+Print "    4) Make a bootable drive from a Windows ISO image and Windows PE / RE images                                "
 Print "    5) Create a bootable Windows ISO image that can include multiple editions                                   "
 Print "    6) Create a bootable ISO image from Windows files in a folder                                               "
 Print "    7) Reorganize the contents of a Windows ISO image                                                           "
@@ -685,8 +698,12 @@ Do
 
     If ScriptingChoice$ = "R" Then
         Print #5, ":: Path to one or more Windows images or full path with a file name:"
-        Print #5, SourceFolder$
-        Print #5, "::"
+        If SourceFolder$ = "" Then
+            Print #5, "<ENTER>"
+        Else
+            Print #5, SourceFolder$
+        End If
+        Print #5, ""
     End If
 
 Loop While SourceFolder$ = ""
@@ -710,10 +727,10 @@ If UCase$(Right$(SourceFolder$, 4)) = ".ISO" Then
 
         Cls
         Print "You did not specify a valid folder or file name. Please check the name and try again."
+
         If ScriptingChoice$ = "R" Then
             Print #5, ":: The above response was not a valid folder or file name."
-            Print #5, SourceFolder$
-            Print #5, "::"
+            Print #5, ""
         End If
         Pause
 
@@ -767,7 +784,7 @@ If FileCount = 0 Then
     Print " Please specify another folder."
     If ScriptingChoice$ = "R" Then
         Print #5, ":: No .ISO files were located at the specified location. Another location will need to be selected."
-        Print #5, "::"
+        Print #5, ""
     End If
     Pause
     Cls
@@ -789,8 +806,12 @@ If FileCount > 1 Then
     Print "Do you want to update at least one Windows edition from ";: Color 0, 10: Print "ALL";: Color 15: Print " of the files located here";: Input UpdateAll$
     If ScriptingChoice$ = "R" Then
         Print #5, ":: Do you want to update at least one Windows edition from ALL of the files located in the specified folder?"
-        Print #5, UpdateAll$
-        Print #5, "::"
+        If UpdateAll$ = "" Then
+            Print #5, "<ENTER>"
+        Else
+            Print #5, UpdateAll$
+        End If
+        Print #5, ""
     End If
 Else
     UpdateAll$ = "Y"
@@ -851,7 +872,7 @@ If UpdateAll$ = "Y" Then
                 Print "File: ";: Color 10: Print Right$(Temp$, (Len(Temp$) - (_InStrRev(Temp$, "\")))): Color 15
                 If ScriptingChoice$ = "R" Then
                     Print #5, ":: An invalid file was selected."
-                    Print #5, "::"
+                    Print #5, ""
                 End If
                 Pause
                 ChDir ProgramStartDir$: GoTo BeginProgram
@@ -874,10 +895,14 @@ For x = 1 To FileCount
     Input "Do you want to update any of the Windows editions in this file"; UpdateThisFile$
     If ScriptingChoice$ = "R" Then
         Print #5, ":: Do you want to update any of the Windows editions in this file?"
-        Print #5, ":: Location:  "; Left$(TempArray$(x), (_InStrRev(TempArray$(x), "\")))
-        Print #5, ":: File name: "; Mid$(TempArray$(x), _InStrRev(TempArray$(x), "\") + 1)
-        Print #5, UpdateThisFile$
-        Print #5, "::"
+        Print #5, "::    Path:  "; Left$(TempArray$(x), (_InStrRev(TempArray$(x), "\")))
+        Print #5, "::    File name: "; Mid$(TempArray$(x), _InStrRev(TempArray$(x), "\") + 1)
+        If UpdateThisFile$ = "" Then
+            Print #5, "<ENTER>"
+        Else
+            Print #5, UpdateThisFile$
+        End If
+        Print #5, ""
     End If
     YesOrNo UpdateThisFile$
     Select Case YN$
@@ -888,7 +913,7 @@ For x = 1 To FileCount
             Color 15
             If ScriptingChoice$ = "R" Then
                 Print #5, ":: The above response was invalid."
-                Print #5, "::"
+                Print #5, ""
             End If
             Pause
             GoTo Marker1
@@ -941,9 +966,9 @@ For x = 1 To FileCount
                     Print "File: ";: Color 10: Print Right$(Temp$, (Len(Temp$) - (_InStrRev(Temp$, "\")))): Color 15
                     If ScriptingChoice$ = "R" Then
                         Print #5, ":: The following file is not valid:"
-                        Print #5, ":: Path: "; Left$(Temp$, ((_InStrRev(Temp$, "\"))) - 1)
-                        Print #5, ":: File: "; Right$(Temp$, (Len(Temp$) - (_InStrRev(Temp$, "\"))))
-                        Print #5, "::"
+                        Print #5, "::    Path: "; Left$(Temp$, ((_InStrRev(Temp$, "\"))) - 1)
+                        Print #5, "::    File: "; Right$(Temp$, (Len(Temp$) - (_InStrRev(Temp$, "\"))))
+                        Print #5, ""
                     End If
                     Pause
                     ChDir ProgramStartDir$: GoTo BeginProgram
@@ -961,8 +986,12 @@ Input "Do you want to specify another file name or folder with more ISO images";
 
 If ScriptingChoice$ = "R" Then
     Print #5, ":: Do you want to specify another file name or folder with more ISO images?"
-    Print #5, MoreFolders$
-    Print #5, "::"
+    If MoreFolders$ = "" Then
+        Print #5, "<ENTER>"
+    Else
+        Print #5, MoreFolders$
+    End If
+    Print #5, ""
 End If
 
 YesOrNo MoreFolders$
@@ -975,7 +1004,7 @@ Select Case YN$
         Color 15
         If ScriptingChoice$ = "R" Then
             Print #5, ":: The previous response was invalid."
-            Print #5, "::"
+            Print #5, ""
         End If
         Pause
         GoTo CheckForMoreFolders
@@ -1019,8 +1048,12 @@ For x = 1 To TotalFiles
 
         If ScriptingChoice$ = "R" Then
             Print #5, ":: Do you want to update ANY of the "; Left$(FileSourceType$(x), 3); " editions within this file:"
-            Print #5, ":: Filename: "; FileArray$(x)
-            Print #5, Temp$
+            Print #5, "::    Filename: "; FileArray$(x)
+            If Temp$ = "" Then
+                Print #5, "<ENTER>"
+            Else
+                Print #5, Temp$
+            End If
         End If
 
         YesOrNo Temp$
@@ -1033,7 +1066,7 @@ For x = 1 To TotalFiles
                 Color 15
                 If ScriptingChoice$ = "R" Then
                     Print #5, ":: An invalid response was provided."
-                    Print #5, "::"
+                    Print #5, ""
                 End If
                 Pause
             Case "N"
@@ -1088,9 +1121,8 @@ For IndexCountLoop = 1 To TotalFiles
 
         If ScriptingChoice$ = "R" Then
             Print #5, ":: Rather than specifying an index number, you asked for HELP."
-            Print #5, "::"
             Print #5, "HELP"
-            Print #5, "::"
+            Print #5, ""
         End If
 
         Pause
@@ -1102,12 +1134,15 @@ For IndexCountLoop = 1 To TotalFiles
     ' We arrive here if help was NOT requested
 
     If ScriptingChoice$ = "R" Then
-        Print #5, ":: These indices were specified:"
-        Print #5, IndexRange$
         If IndexRange$ = "" Then
-            Print #5, ":: The above <ENTER> indicates that a request to display available indicies was made."
+            Print #5, ":: A listing of available indices was requested by pressing <ENTER>."
+            Print #5, "<ENTER>"
+            Print #5, ""
+        Else
+            Print #5, ":: These indices were specified:"
+            Print #5, IndexRange$
+            Print #5, ""
         End If
-        Print #5, "::"
     End If
 
     If ((IndexRange$ <> "") And (IndexRange$ <> "ALL")) Then GoTo ProcessRange
@@ -1161,7 +1196,7 @@ For IndexCountLoop = 1 To TotalFiles
         Color 15
         If ScriptingChoice$ = "R" Then
             Print #5, ":: The range of indices specified was not valid."
-            Print #5, "::"
+            Print #5, ""
         End If
         Pause
         GoTo GetMyIndexList
@@ -1217,7 +1252,7 @@ For IndexCountLoop = 1 To TotalFiles
             Color 15
             If ScriptingChoice$ = "R" Then
                 Print #5, ":: An invalid index number was specified."
-                Print #5, "::"
+                Print #5, ""
             End If
             Pause
             GoTo GetMyIndexList
@@ -1253,8 +1288,12 @@ Do
     Input "Enter the path where the project should be created: ", DestinationFolder$
     If ScriptingChoice$ = "R" Then
         Print #5, ":: Enter the path where the project will be created:"
-        Print #5, DestinationFolder$
-        Print #5, "::"
+        If DestinationFolder$ = "" Then
+            Print #5, "<ENTER>"
+        Else
+            Print #5, DestinationFolder$
+        End If
+        Print #5, ""
     End If
 Loop While DestinationFolder$ = ""
 
@@ -1270,7 +1309,7 @@ If Len(DestinationFolder$) = 3 Then
     Color 15
     If ScriptingChoice$ = "R" Then
         Print #5, ":: It appears that the root directory of a drive was specified. This is not a valid location."
-        Print #5, "::"
+        Print #5, ""
     End If
     Pause
     GoTo GetDestinationPath10
@@ -1292,7 +1331,7 @@ Select Case DestinationIsRemovable
         Color 14, 4: Print "This is not a valid disk.";: Color 15: Print " Please specify another location."
         If ScriptingChoice$ = "R" Then
             Print #5, ":: An invalid disk was specified."
-            Print #5, "::"
+            Print #5, ""
         End If
         Pause
         GoTo GetDestinationPath10
@@ -1303,7 +1342,7 @@ Select Case DestinationIsRemovable
         Print "NOTE: Project must be created on a fixed disk due to limitations of some Microsoft utilities."
         If ScriptingChoice$ = "R" Then
             Print #5, ":: The specified disk is a removable disk. This is not valid."
-            Print #5, "::"
+            Print #5, ""
         End If
         Pause
         GoTo GetDestinationPath10
@@ -1329,7 +1368,7 @@ If Not (_DirExists(DestinationFolder$)) Then
         Print "Please recheck the path you have specified and try again."
         If ScriptingChoice$ = "R" Then
             Print #5, ":: The destination does not exist and could not be created."
-            Print #5, "::"
+            Print #5, ""
         End If
         Pause
         GoTo GetDestinationPath10
@@ -1433,8 +1472,12 @@ If InjectionMode$ = "UPDATES" Then
         Input "Enter the path to the Windows update files: ", UpdatesLocation$
         If ScriptingChoice$ = "R" Then
             Print #5, ":: Enter the path to the Windows update files:"
-            Print #5, UpdatesLocation$
-            Print #5, "::"
+            If UpdatesLocation$ = "" Then
+                Print #5, "<ENTER>"
+            Else
+                Print #5, UpdatesLocation$
+            End If
+            Print #5, ""
         End If
     Loop While UpdatesLocation$ = ""
 End If
@@ -1445,8 +1488,12 @@ If InjectionMode$ = "DRIVERS" Then
         Input "Enter the path to the drivers: ", UpdatesLocation$
         If ScriptingChoice$ = "R" Then
             Print #5, ":: Enter the path to the drivers:"
-            Print #5, UpdatesLocation$
-            Print #5, "::"
+            If UpdatesLocation$ = "" Then
+                Print #5, "<ENTER>"
+            Else
+                Print #5, UpdatesLocation$
+            End If
+            Print #5, ""
         End If
     Loop While UpdatesLocation$ = ""
 End If
@@ -1457,8 +1504,12 @@ If InjectionMode$ = "BCD" Then
         Input "Enter the path to the boot-critical drivers: ", UpdatesLocation$
         If ScriptingChoice$ = "R" Then
             Print #5, ":: Enter the path to the boot-critical drivers:"
-            Print #5, UpdatesLocation$
-            Print #5, "::"
+            If UpdatesLocation$ = "" Then
+                Print #5, "<ENTER>"
+            Else
+                Print #5, UpdatesLocation$
+            End If
+            Print #5, ""
         End If
     Loop While UpdatesLocation$ = ""
 End If
@@ -1481,7 +1532,7 @@ If Not (_DirExists(x64Updates$)) Then
     Color 14, 4: Print "The specified x64 folder does not exist.";: Color 15: Print " Please try again."
     If ScriptingChoice$ = "R" Then
         Print #5, ":: The specified x64 folder does not exist."
-        Print #5, "::"
+        Print #5, ""
     End If
     Pause
     GoTo GetUpdatesLocation
@@ -1530,7 +1581,7 @@ Select Case InjectionMode$
             Print "Please specify another location."
             If ScriptingChoice$ = "R" Then
                 Print #5, ":: No x64 update files were found at the location specified."
-                Print #5, "::"
+                Print #5, ""
             End If
             Pause
             GoTo GetUpdatesLocation
@@ -1547,7 +1598,7 @@ Select Case InjectionMode$
             Print "Please specify another location."
             If ScriptingChoice$ = "R" Then
                 Print #5, ":: No x64 drivers were found at the location specified."
-                Print #5, "::"
+                Print #5, ""
             End If
             Pause
             GoTo GetUpdatesLocation
@@ -1570,7 +1621,7 @@ If Not (_DirExists(x86Updates$)) Then
     Color 14, 4: Print "The specified x86 folder does not exist.";: Color 15: Print " Please try again."
     If ScriptingChoice$ = "R" Then
         Print #5, ":: The specified x86 folder does not exist."
-        Print #5, "::"
+        Print #5, ""
     End If
     Pause
     GoTo GetUpdatesLocation
@@ -1624,7 +1675,7 @@ Select Case InjectionMode$
             Print "Please specify another location."
             If ScriptingChoice$ = "R" Then
                 Print #5, ":: No x86 update files were found in this location."
-                Print #5, "::"
+                Print #5, ""
             End If
             Pause
             GoTo GetUpdatesLocation
@@ -1639,7 +1690,7 @@ Select Case InjectionMode$
             Print "Please specify another location."
             If ScriptingChoice$ = "R" Then
                 Print #5, ":: No x86 drivers were found in this location."
-                Print #5, "::"
+                Print #5, ""
             End If
             Pause
             GoTo GetUpdatesLocation
@@ -1668,7 +1719,7 @@ End If
 If ScriptingChoice$ = "R" Then
     Print #5, ":: Name of final ISO image (without an extension):"
     Print #5, Left$(UserSelectedImageName$, _InStrRev(UserSelectedImageName$, ".") - 1)
-    Print #5, "::"
+    Print #5, ""
 End If
 
 ' If the user was recording a script, we now have all the information needed. The script will now
@@ -1685,11 +1736,6 @@ If ScriptingChoice$ = "R" Then
     ' Turn off script recording
 
     ScriptingChoice$ = "S"
-
-    ' Make the script friendly. This simply takes the places where the user hit <ENTER> in response to something rather than
-    ' supplying an answer, and replacing the blank line with the tag <ENTER> to make it easier to understand.
-
-    MakeScriptFriendly
 
     ' Move the newly recorded script to the program folder.
 
@@ -3662,7 +3708,7 @@ End If
 CleanPath DestinationFolder$
 Cmd$ = "powershell.exe -command Remove-MpPreference -ExclusionPath " + "'" + Chr$(34) + Temp$ + Chr$(34) + "'"
 Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
-Kill "WIM_Exclude_Path.txt"
+If _FileExists("WIM_Exclude_Path.txt") Then Kill "WIM_Exclude_Path.txt"
 
 ' If the user opted to have a shutdown performed, then skip to the "ShutdownRequested" routine.
 
@@ -3779,29 +3825,67 @@ Shell _Hide "shutdown /s /t 5 /f"
 GoTo EndProgram
 
 
-' **************************************************************************************
-' * Make a bootable drive from a Windows ISO image or update an already existing drive *
-' **************************************************************************************
+' *****************************************************************************
+' * Make a bootable drive from a Windows ISO image and Windows PE / RE images *
+' *****************************************************************************
 
 MakeBootDisk:
 
 ' This routine will allow you to create a bootable drive for installing Windows or
 ' to be used as an emergency boot disk. The option to create one or more additional
-' partitions will be given. For each of those additional partitions, you will also have
-' the option to BitLocker encrypt those partititions.
-'
-' NOTE: In order to make this disk bootable on both UEFI and BIOS based system, the disk
-' will be initialized as MBR (not GPT). This means that the volume will be limited to 2TB.
+' generic partitions is also provided as is support for BitLocker in the single boot
+' image option.
 
-' The user entered a valid response
-' Initialize variables and arrays
-
-' IMPORTANT: This routine has some code to allow the user to choose whether any partions aside from the
+' IMPORTANT: This routine has some code to allow the user to choose whether any partitions aside from the
 ' first partition should be created as NTFS or exFAT. If you want the program to just automatically
 ' create all partitions as NTFS then set "UserCanPickFS$" below to FALSE. It you set it to TRUE then
 ' the user will be allowed to pick the filesystem to use.
 
 UserCanPickFS$ = "FALSE" ' Set this to "FALSE" to always use NTFS. See the note above about this.
+
+Boot_ModeSelect:
+
+Do
+    Cls
+    Print "Do you want to create a Single bootable partition or Multple boot partitions?"
+    Print
+    Print "If you are not yet familiar with this option, enter HELP below for important things to know about this option."
+    Print
+    Input "Single, Multiple, or HELP: "; Temp$
+    Temp$ = UCase$(Temp$)
+    Select Case Temp$
+
+        Case "S", "M", "H", "SINGLE", "MULTIPLE", "HELP"
+            Temp$ = Left$(Temp$, 1)
+            Exit Do
+    End Select
+Loop
+
+If Temp$ = "H" Then
+    Cls
+    Print "If you wish to take a single Window ISO image and make bootable media from it, choose the Single option. Note that"
+    Print "this option will still give you the ability to create up to two additional partitions that you can use for storing"
+    Print "other data. This mode is highly compatible with x86, x64, BIOS, and UEFI based systems. This method uses an MBR"
+    Print "(Master Boot Record) disk configuration whereas the other method uses a GPT (GUID Partition Table) configuration."
+    Print
+    Print "The Multiple option will sacrifice x86 and BIOS compatibility but offers you the ability to do the following:"
+    Print
+    Print "1) You can boot multiple different items. For example, you could boot your Window 10 media, Windows 11 media, Macrium"
+    Print "   reflect recovery media, and more all from the same flash drive, SSD, HDD, etc."
+    Print
+    Print "2) You will leave behind the 2TB disk limitation. You can use a disk of any size."
+    Print
+    Print "3) Rather than a 4 partition limit, this program will support up to 15 partitions"
+    Print
+    Print "This option is intended only for use with x64 UEFI based systems."
+    Pause
+    GoTo Boot_ModeSelect
+End If
+
+If Temp$ = "S" Then GoTo Boot_SingleMode
+If Temp$ = "M" Then GoTo Boot_MultipleMode
+
+Boot_SingleMode:
 
 AddPart$ = ""
 TotalPartitions = 0
@@ -4200,7 +4284,7 @@ TotalPartitions = AdditionalPartitions + 2
 ' we don't need to ask about encryption.
 
 PartitionSize$(1) = "2560"
-If TotalPartitions = 2 Then GoTo SelectDisk
+If TotalPartitions = 2 Then GoSub SelectDisk
 
 For x = 2 To (TotalPartitions - 1)
 
@@ -4299,86 +4383,8 @@ For x = 1 To AdditionalPartitions
     End If
 Next x
 
-' Display a list of disks and ask which one to use. If user needs more detail on a disk, display that detail.
-
-SelectDisk:
-
-Cls
-Print "Building a list of disks in the system..."
-
-GetDiskDetails
-
-' Init varaibles
-' NOTE: Since a Disk ID of 0 may be valid on some systems (Disk 0 is not always the boot disk), we cannot assume that
-' a value of 0 is invalid. If the user simply hits ENTER in response to a numerical entery, that value would be 0,
-' but we don't want to consider an ENTER without an actual response to be valid. For this reason, we ask for a string
-' input where we can check for a nul input and flag that as invalid. We can then convert the string response into a
-' number.
-
-Temp$ = ""
-ValidDisk = 0
-
-AskForDiskID:
-
-Do
-    Cls
-    Print "Please note the number of the disk that you want to make bootable."
-    Print
-    Color 0, 14: Print ListOfDisks$: Color 15
-    Print "Description for each disk:"
-    Print
-    Color 0, 14
-
-    For x = 1 To NumberOfDisks
-        Print "Disk"; DiskIDList(x); "Description: "; DiskDetail$(x)
-    Next x
-
-    Color 15
-    Print
-    Input "Enter the disk number of the disk you want to make bootable: ", Temp$
-Loop While Temp$ = ""
-
-DiskID = Val(Temp$)
-
-' Since typing a non-numeric response would yield a val of 0, we need to do a check to see if what the user
-' entered was really a 0 or something else.
-
-If DiskID = 0 And Temp$ <> "0" Then
-    GoTo AskForDiskID
-End If
-
-For x = 1 To NumberOfDisks
-
-    If DiskID = DiskIDList(x) Then
-        ValidDisk = 1
-        GoTo ValidDiskCheckDone
-    End If
-
-Next x
-
-ValidDiskCheckDone:
-
-If ValidDisk = 0 Then
-    Cls
-    Print
-    Color 14, 4: Print "Invalid Disk Selected!";: Color 15: Print " Please enter one of the disk numbers shown by the program to be valid."
-    Pause
-    GoTo AskForDiskID
-End If
-
-Print
-Print "You have selected the following disk: ";: Color 0, 14: Print "Disk"; DiskID; "- "; DiskDetail$(x): Color 15
-Print
-Input "Is this correct"; Temp$
-YesOrNo Temp$
-Temp$ = YN$
-
-Select Case Temp$
-    Case "X", "N"
-        GoTo AskForDiskID
-    Case "Y"
-        Exit Select
-End Select
+'test code
+'GoSub SelectDisk
 
 ' We are done with the variable ListOfDisks$. Let's free up the space it used by clearing it.
 
@@ -4392,17 +4398,19 @@ ListOfDisks$ = ""
 ' Initialize variables
 
 Cls
-Print "Check status of selected disk..."
+Print "Check status of selected drive..."
 DiskIDSearchString$ = "Disk" + Str$(DiskID) + " "
-Open "TEMP.BAT" For Output As #1
-Print #1, "@echo off"
-Print #1, "(echo list disk"
-Print #1, "echo exit"
-Print #1, ") | diskpart > diskpart.txt"
-Close #1
+ff = FreeFile
+Open "TEMP.BAT" For Output As #ff
+Print #ff, "@echo off"
+Print #ff, "(echo list disk"
+Print #ff, "echo exit"
+Print #ff, ") | diskpart > diskpart.txt"
+Close #ff
 Shell "TEMP.BAT"
 If _FileExists("TEMP.BAT") Then Kill "TEMP.BAT"
-Open "diskpart.txt" For Input As #1
+ff = FreeFile
+Open "diskpart.txt" For Input As #ff
 
 ' Init variables
 
@@ -4411,7 +4419,7 @@ Units$ = ""
 AvailableSpace = 0
 
 Do
-    Line Input #1, ReadLine$
+    Line Input #ff, ReadLine$
 
     If InStr(ReadLine$, DiskIDSearchString$) Then
         AvailableSpaceString$ = Mid$(ReadLine$, 28, 4)
@@ -4419,13 +4427,15 @@ Do
         Exit Do
     End If
 
-Loop Until EOF(1)
+Loop Until EOF(ff)
 
-Close #1
+Close #ff
+
 If _FileExists("diskpart.txt") Then Kill "diskpart.txt"
 If Units$ = "MB" Then Multiplier = 1
 If Units$ = "GB" Then Multiplier = 1024
 If Units$ = "TB" Then Multiplier = 1048576
+
 AvailableSpace = ((Val(AvailableSpaceString$)) * Multiplier)
 
 ' Add up the size of partitions specified by user. The media needs to have more space than what user specified.
@@ -4522,111 +4532,7 @@ Close #1
 Shell "TEMP.BAT"
 If _FileExists("TEMP.BAT") Then Kill "TEMP.BAT"
 
-' Get drive letter to assign to each partition
-
-' The user can choose to manually assign drive letters to the partitions being created on the bootable media
-' or allow the program to automatically assign drive letters.
-
-SelectAutoOrManual:
-
-Cls
-Print "The program will automatically assign drive letters to the"; TotalPartitions; "partitions that will be created on the drive. However,"
-Print "if you prefer, you can manually assign drive letters."
-Print
-Input "Do you want to manually assign drive letters"; ManualAssignment$
-
-YesOrNo ManualAssignment$
-
-Select Case YN$
-    Case "Y"
-        GoTo ManualAssign
-    Case "N"
-        GoTo AutoAssign
-    Case "X"
-        GoTo SelectAutoOrManual
-End Select
-
-ManualAssign:
-
-' Allow the user to manually choose drive letters
-
-For x = 1 To TotalPartitions
-    Do
-
-        RepeatLetter:
-
-        Cls
-        Print "For all"; TotalPartitions; "partitions, enter the drive letter to assign. Enter only the letter without a colon (:)."
-        Print
-        Letter$(x) = "" ' Set initial value
-        Print "Enter the drive letter for partition #";: Color 0, 10: Print x;: Color 15: Print ": ";
-        Input "", Letter$(x)
-    Loop While Letter$(x) = ""
-    Letter$(x) = UCase$(Letter$(x))
-    If (Len(Letter$(x)) > 1) Or (Letter$(x)) = "" Or ((Asc(Letter$(x))) < 65) Or ((Asc(Letter$(x))) > 90) Then
-        Print
-        Color 14, 4: Print "That was not a valid entry. Please try again.": Color 15
-        Print
-        GoTo RepeatLetter
-    End If
-    If _DirExists(Letter$(x) + ":") Then
-        Print
-        Color 14, 4: Print "That drive letter is already in use.": Color 15
-        Pause
-        GoTo RepeatLetter
-    End If
-Next x
-
-GoTo LetterAssignmentDone
-
-AutoAssign:
-
-' Automatically assign drive letters
-
-' To auto assign drive letters, we go through a loop checking to see if drive letters C:, D:, E:, etc. are already in use.
-' If in use, we move on to the next drive letter. After the first free drive letter is picked, we repeat the same process
-' but we resume checking for free drive letters with the letter after the last one we just assigned. To determine if a
-' drive letter is available, we first check to if the drive letter exists using a _DIREXISTS command. The problem with
-' this is that _DIREXISTS will indicate that a BitLocker encrypted drive does NOT exist if it is locked. As a result,
-' if _DIREXISTS indicates that a drive letter does NOT exist, we follow up by running the command "manage-bde -status D:",
-' where D: is the drive letter we want to test. We grab the output of that command and check for the string "could not be
-' opened by BitLocker". If we find that string, then that drive letter is not BitLocker encrypted and so it really is a free
-' drive letter in that case.
-
-LettersAssigned = 0 ' Keep track of how many drive letters were assigned. Once equal to the number of partitions, we are done.
-
-Restore DriveLetterData
-
-For y = 1 To 24
-    Read Letter$(LettersAssigned + 1)
-    If Not (_DirExists(Letter$(LettersAssigned + 1) + ":")) Then
-        Cmd$ = "manage-bde -status " + Letter$(LettersAssigned + 1) + ": > BitLockerStatus.txt"
-        Shell Cmd$
-        ff = FreeFile
-        Open "BitLockerStatus.txt" For Input As #ff
-        FileLength = LOF(ff)
-        Temp$ = Input$(FileLength, ff)
-        Close #ff
-        Kill "BitLockerStatus.txt"
-        If InStr(Temp$, "could not be opened by BitLocker") Then
-            LettersAssigned = LettersAssigned + 1
-        End If
-        If LettersAssigned = TotalPartitions Then GoTo LetterAssignmentDone
-    End If
-Next y
-
-' The FOR loop should only complete if we run out of drive letters. We need to warn the user about this and how they can correct
-' the issue. The program will then end.
-
-Cls
-Print "Not enough drive letters were available to assign to all partititions!"
-Print
-Print "Solution: Please free up some drive letters and then re-run this program."
-Print "The program will now end."
-Pause
-System
-
-LetterAssignmentDone:
+GoSub SelectAutoOrManual
 
 ' We reach this point when all drive letters have been successfully assigned.
 
@@ -5047,6 +4953,805 @@ Pause
 
 ChDir ProgramStartDir$: GoTo BeginProgram
 
+' The portion of the routine for creating multiple bootable partitions for UEFI based systems begins here.
+
+Boot_MultipleMode:
+
+TotalPartitions = 0
+OS_Partitions = 0
+PE_Partitions = 0
+Other_Partitions = 0
+
+' IMPORTANT: There are two variables you need to have a clear understanding of. Below, I ask for the number of operating systems the user wants to add.
+' I put that in OS_Partitions and then double that value because each OS requires 2 partitions. There are places in the code where I do calculations
+' that may look a little odd to go back to actual number of operating systems but based upon the number of OS partitions. This got confusing so I've
+' added another variable now called OS_Count that simply holds the number of operating systems. We may eventually go back and clean this up.
+
+Cls
+Input "How many Operating Systems (Windows 10 or Windows 11) would you like to add"; OS_Count
+
+If OS_Count > 0 Then
+    OS_Partitions = OS_Count * 2
+Else
+    OS_Partitions = 0
+End If
+
+TotalPartitions = OS_Partitions
+
+If TotalPartitions > 10 Then
+    Cls
+    Print "Each operating system creates 2 partitions on the boot media. Currently this program will only accomodate a"
+    Print "maximum of 10 total partitions."
+    Pause
+    GoTo Boot_MultipleMode
+End If
+
+Cls
+Print "How many Windows PE / RE based programs would you like to add? These are programs such as the Macrium Reflect"
+Print "recovery disk or the Acronis TrueImage recovery disk, etc."
+Print
+Input "How many Windows PE / RE based programs would you like to add"; PE_Partitions
+TotalPartitions = TotalPartitions + PE_Partitions
+
+If TotalPartitions > 10 Then
+    Cls
+    Print "Each operating system creates 2 partitions on the boot media. Each of your Windows PE / RE programs will occupy"
+    Print " one additional partition. Currently this program will only accomodate a maximum of 10 partitions."
+    Pause
+    GoTo Boot_MultipleMode
+End If
+
+Cls
+Input "How many general purpose partitions would you like to add"; Other_Partitions
+TotalPartitions = TotalPartitions + Other_Partitions
+
+If TotalPartitions > 10 Then
+    Cls
+    Print "Each operating system creates 2 partitions on the boot media. Each of your Windows PE / RE programs will occupy"
+    Print " one additional partition as will the general purpose partitions. Currently this program will only accomodate a"
+    Print "maximum of 10 partitions."
+    Pause
+    GoTo Boot_MultipleMode
+End If
+
+ReDim _Preserve SourcePath_Multi$(TotalPartitions)
+ReDim _Preserve PartitionDescription(TotalPartitions)
+ReDim _Preserve ParSize(TotalPartitions)
+ReDim _Preserve ParType$(TotalPartitions)
+PartitionCounter = 0
+
+If OS_Partitions > 0 Then
+    For x = 1 To (OS_Partitions) Step 2
+        PartitionCounter = PartitionCounter + 1
+
+        Redo_OS_Partitions:
+        Do
+            Cls
+            Print "Please enter a friendly name for Operating System #"; Int((x + 1) / 2)
+            Print
+            Input "Friendly Name: ", PartitionDescription$(x)
+        Loop While PartitionDescription$(x) = ""
+
+        If Len(PartitionDescription$(x)) > 45 Then
+            Print
+            Print "Please enter a description of 45 characters or less."
+            Pause
+            GoTo Redo_OS_Partitions
+        End If
+
+        PartitionDescription$(x + 1) = PartitionDescription$(x)
+
+        Redo_OS_Path:
+
+        Cls
+        Print "Please enter the full path and file name of the ISO image for ";: Color 0, 10: Print PartitionDescription$(x);: Color 15: Input ": ", SourcePath_Multi$(x)
+
+        If Not _FileExists(SourcePath_Multi$(x)) Then
+            Cls
+            Print "No such file exists. Please enter a valid path with file name."
+            Pause
+            GoTo Redo_OS_Path
+        End If
+
+        SourcePath_Multi$(x + 1) = SourcePath_Multi$(x)
+
+        Do
+            Cls
+            Print "Since this is an Operating System Installation Media, we need two partitions to support it. The first partition"
+            Print "will be a relativly small partition. I would suggest using a size of 2 GB to start. If you are using a modified"
+            Print "Windows image with updates injected, you may need something larger like 2.5 GB."
+            Print
+            Print "Enter the size of the ";: Color 0, 10: Print "first";: Color 15: Print " partition for ";: Color 0, 10: Print PartitionDescription(x): Color 15
+            Print
+            GoSub Generic_Partition_Size
+            ParSize(x) = Val(ParSizeInMB$)
+            ParType$(x) = "FAT32"
+        Loop While ParSize(x) = 0
+
+        PartitionCounter = PartitionCounter + 1
+        If PartitionCounter = TotalPartitions Then
+            Do
+                Cls
+                Print "This is the second partition for an Operating System boot and is the last partition being created. Since this is"
+                Print "the last partition, we can size it to automatically occupy all remaining space on the drive."
+                Print
+                Input "Do you want to auto size this partition"; AutoSize$
+                YesOrNo AutoSize$
+                AutoSize$ = YN$
+            Loop While AutoSize$ = "X"
+
+            If AutoSize$ = "Y" Then
+                ParSize(x + 1) = 0
+                ParType$(x + 1) = "NTFS"
+                _Continue
+            End If
+        End If
+
+        Do
+            Cls
+            Print "This is the second partition for an Operating System."
+            Print
+            Print "This partition will hold the bulk of the image so it suggested to make it at least as large as your ISO image."
+            Print "file. If you think that you may want to manually update this partition with a larger image in the future, then"
+            Print "making this partition larger to leave space to grow."
+            Print
+            Print "Enter the size of the ";: Color 0, 10: Print "second";: Color 15: Print " partition for ";: Color 0, 10: Print PartitionDescription$(x + 1): Color 15
+            Print
+            GoSub Generic_Partition_Size
+            ParSize(x + 1) = Val(ParSizeInMB$)
+            ParType$(x + 1) = "NTFS"
+        Loop While ParSize(x + 1) = 0
+
+    Next x
+End If
+
+' Get PE/RE media details
+
+' If User added any Windows operating systems, then we need to know how many partitions were used by those so that we
+' we add WinPE media afterward. We will store that number of partitions as an "Offset".
+
+Offset = 0 ' Set an intial value
+If OS_Partitions > 0 Then Offset = OS_Partitions
+
+If PE_Partitions > 0 Then
+    For x = 1 To (PE_Partitions)
+        PartitionCounter = PartitionCounter + 1
+
+        Redo_PE_Partitions:
+
+        Do
+            Cls
+            Print "Please enter a friendly name for Windows PE / RE based media number"; x
+            Print
+            Input "Friendly Name: ", PartitionDescription$(x + Offset)
+        Loop While PartitionDescription$(x + Offset) = ""
+
+        If Len(PartitionDescription$(x + Offset)) > 45 Then
+            Print
+            Print "Please enter a description of 45 characters or less."
+            Pause
+            GoTo Redo_PE_Partitions
+        End If
+
+        Redo_PE_Path:
+
+        Cls
+        Print "Please enter the full path and file name of the ISO image for ";: Color 0, 10: Print PartitionDescription$(x + Offset);: Color 15: Input ": ", SourcePath_Multi$(x + Offset)
+        If Not _FileExists(SourcePath_Multi$(x + Offset)) Then
+            Cls
+            Print "No such file exists. Please enter a valid path with file name."
+            Pause
+            GoTo Redo_PE_Path
+        End If
+
+        If PartitionCounter = TotalPartitions Then
+            Do
+                Cls
+                Print "The partition being created for ";: Color 0, 10: Print PartitionDescription(x + Offset);: Color 15: Print " is the last partition in your project."
+                Print "Since this is the last partition, we can size it to automatically occupy all remaining space on the drive."
+                Print
+                Input "Do you want to auto size this partition"; AutoSize$
+                YesOrNo AutoSize$
+                AutoSize$ = YN$
+            Loop While AutoSize$ = "X"
+
+            If AutoSize$ = "Y" Then
+                ParSize(x + Offset) = 0
+                ParType$(x + Offset) = "FAT32"
+                _Continue
+            End If
+        End If
+
+        Do
+            Cls
+            Print "Enter the size of the partition for ";: Color 0, 10: Print PartitionDescription(x + Offset): Color 15
+            Print
+            GoSub Generic_Partition_Size
+            ParSize(x + Offset) = Val(ParSizeInMB$)
+            ParType$(x + Offset) = "FAT32"
+        Loop While ParSize(x + Offset) = 0
+
+    Next x
+End If
+
+' Update the partition offset. The whole idea of this process is to make bootable media, so there should be either previous Operating System or WinPE
+' based partitions or both specified already. However, we'll verify that now and create the proper offset.
+
+Offset = Offset + PE_Partitions
+If Offset = 0 Then
+    Cls
+    Print "You created no Operating system partitions and no WinPE based media partitions. This program can still create other"
+    Print "partitions for you and BitLocker encrypt them for you."
+    Pause
+End If
+
+If Other_Partitions > 0 Then
+    For x = 1 To (Other_Partitions)
+        PartitionCounter = PartitionCounter + 1
+
+        Redo_Other_Partitions:
+
+        Do
+            Cls
+            Print "Please enter a friendly name for the general purpose partition number"; x
+            Print
+            Input "Friendly Name: ", PartitionDescription$(x + Offset)
+        Loop While PartitionDescription$(x + Offset) = ""
+
+        If Len(PartitionDescription$(x + Offset)) > 45 Then
+            Print
+            Print "Please enter a description of 45 characters or less."
+            Pause
+            GoTo Redo_Other_Partitions
+        End If
+
+        If PartitionCounter = TotalPartitions Then
+            Do
+                Cls
+                Print "The partition being created for ";: Color 0, 10: Print PartitionDescription(x + Offset);: Color 15: Print " is the last partition in your project."
+                Print "Since this is the last partition, we can size it to automatically occupy all remaining space on the drive."
+                Print
+                Input "Do you want to auto size this partition"; AutoSize$
+                YesOrNo AutoSize$
+                AutoSize$ = YN$
+            Loop While AutoSize$ = "X"
+
+            If AutoSize$ = "Y" Then
+                ParSize(x + Offset) = 0
+                ParType$(x + Offset) = "NTFS"
+                _Continue
+            End If
+        End If
+
+        Do
+            Cls
+            Print "Enter the size of the partition for ";: Color 0, 10: Print PartitionDescription(x + Offset): Color 15
+            Print
+            GoSub Generic_Partition_Size
+            ParSize(x + Offset) = Val(ParSizeInMB$)
+            ParType$(x + Offset) = "NTFS"
+        Loop While ParSize(x + Offset) = 0
+    Next x
+End If
+
+If TotalPartitions = 0 Then
+    Cls
+    Print "You specified zero partitions. We will now return you to the main menu so that you can ponder what you have done."
+    Pause
+    ChDir ProgramStartDir$: GoTo BeginProgram
+End If
+
+Do
+    Cls
+    Print "Here is a summary of what we have so far:"
+    Print
+    Print "                  ";: Color 0, 10: Print "Description";: Color 15: Print "                                 ";: Color 0, 10: Print "Partition Size (in MB)";
+    Color 15: Print "   ";: Color 0, 10: Print "Partition Type": Color 15
+    Print
+
+    If OS_Partitions > 0 Then
+        For x = 1 To (Int(OS_Partitions / 2))
+            Print PartitionDescription$((x * 2) - 1); " boot partition";: Locate CsrLin, 70: Print ParSize((x * 2) - 1);: Locate CsrLin, 92: Print "FAT32"
+            Print PartitionDescription$(x * 2); " setup partition";: Locate CsrLin, 70: Print ParSize(x * 2);: Locate CsrLin, 92: Print "NTFS"
+        Next x
+    End If
+
+    If PE_Partitions > 0 Then
+        For x = 1 To PE_Partitions
+            Print PartitionDescription$(OS_Partitions + x); " boot partition";: Locate CsrLin, 70: Print ParSize(OS_Partitions + x);: Locate CsrLin, 92: Print "FAT32"
+        Next x
+    End If
+
+    If Other_Partitions > 0 Then
+        For x = 1 To Other_Partitions
+            Print PartitionDescription$(OS_Partitions + PE_Partitions + x); " NTFS partition";: Locate CsrLin, 70
+            Print ParSize(OS_Partitions + PE_Partitions + x);: Locate CsrLin, 92: Print "NTFS"
+        Next x
+    End If
+
+    Print
+    Print "If the last partition shows a size of 0, this indicates that the partition is set to occupy all remaining space."
+    Print
+    Input "Is the above information correct"; Temp$
+    YesOrNo Temp$
+Loop While YN$ = "X"
+Temp$ = YN$
+
+If Temp$ = "N" Then
+    Cls
+    Print "Please organize your information and run this routine again."
+    Pause
+    ChDir ProgramStartDir$: GoTo BeginProgram
+End If
+
+' Present a list of disks to the user so that they can select the disk to be used for this project.
+
+GoSub SelectDisk
+
+' Verify that the disk selected has enough space to hold all the partitions requested by the user.
+
+' Verify that the amount of space available is greater than what is specified by the user
+
+Cls
+Print "Perform initial preparation of the selected drive..."
+DiskIDSearchString$ = "Disk" + Str$(DiskID) + " "
+ff = FreeFile
+Open "TEMP.BAT" For Output As #ff
+Print #ff, "@echo off"
+Print #ff, "(echo list disk"
+Print #ff, "echo exit"
+Print #ff, ") | diskpart > diskpart.txt"
+Close #ff
+Shell "TEMP.BAT"
+If _FileExists("TEMP.BAT") Then Kill "TEMP.BAT"
+ff = FreeFile
+Open "diskpart.txt" For Input As #ff
+
+' Init variables
+
+AvailableSpaceString$ = ""
+Units$ = ""
+AvailableSpace = 0
+
+Do
+    Line Input #ff, ReadLine$
+
+    If InStr(ReadLine$, DiskIDSearchString$) Then
+        AvailableSpaceString$ = Mid$(ReadLine$, 28, 4)
+        Units$ = Mid$(ReadLine$, 33, 2)
+        Exit Do
+    End If
+
+Loop Until EOF(ff)
+
+Close #ff
+
+If _FileExists("diskpart.txt") Then Kill "diskpart.txt"
+If Units$ = "MB" Then Multiplier = 1
+If Units$ = "GB" Then Multiplier = 1024
+If Units$ = "TB" Then Multiplier = 1048576
+AvailableSpace = ((Val(AvailableSpaceString$)) * Multiplier)
+
+TotalSpaceNeeded = 0
+
+For x = 1 To TotalPartitions
+    TotalSpaceNeeded = TotalSpaceNeeded + ParSize(x)
+
+    ' For the last partition, a size of zero indicates that all remaining space should be used. In the event that we encounter
+    ' a size of zero, we should set aside a minimum of 100MB since that is the minimum partition size we are enforcing
+
+    If ParSize(x) = 0 Then
+        TotalSpaceNeeded = TotalSpaceNeeded + 100
+    End If
+Next x
+
+If TotalSpaceNeeded > AvailableSpace Then
+    Cls
+    Color 14, 4: Print "Warning!";: Color 15: Print " You have have specified partition sizes that total more than the space available on the selected disk."
+    Print
+    Print "Please check the values that you have supplied and the disk that you selected and try again."
+    Pause
+    ChDir ProgramStartDir$: GoTo BeginProgram
+End If
+
+' Perform a simple check to validate that all OS images specified appear to be valid Win x64 images.
+
+If OS_Partitions > 0 Then
+    For x = 1 To OS_Partitions
+        DetermineArchitecture SourcePath_Multi$(x), 1
+        Select Case ImageArchitecture$
+            Case "x86", "DUAL", "NONE"
+                Cls
+                Print
+                Print "The file specified for "; PartitionDescription$(x); " appears to be invalid."
+                Print "The image specified must be a Windows x64 image. This particular routine does not support x86 or dual"
+                Print "architecture images, nor does it support other types of images."
+                Print
+                Print "Please resolve this issue and then run this program again."
+                Pause
+                ChDir ProgramStartDir$: GoTo BeginProgram
+            Case "x64"
+                ' Do nothing - We want the image to be of type x64 so we'll proceed on at this point.
+        End Select
+    Next x
+End If
+
+' Currently, we are not performing any validation on Win PE / RE media. This may be considered for future addition.
+
+' We will now ask the user if they want to manually or automatically select drive letter assignments for the partitions being created.
+' If auto, we'll get those drive letters now.
+
+ff = FreeFile
+Open "temp.bat" For Output As #ff
+Print #ff, "@echo off"
+Print #ff, "(echo select disk"; DiskID
+Print #ff, "echo clean"
+Print #ff, "echo convert gpt"
+Print #ff, "echo exit"
+Print #ff, ") | diskpart > NUL"
+Close #ff
+Shell _Hide "temp.bat"
+If _FileExists("temp.bat") Then Kill "temp.bat"
+
+GoSub SelectAutoOrManual
+
+Do
+    Cls
+    Print "Here is an updated summary along with drive letter assignments:"
+    Print
+    Print "                  ";: Color 0, 10: Print "Description";: Color 15: Print "                                 ";: Color 0, 10: Print "Partition Size (in MB)";: Color 15
+    Print "   ";: Color 0, 10: Print "Partition Type";: Color 15: Print "   ";: Color 0, 10: Print "Drive Letter": Color 15
+    Print
+
+    If OS_Partitions > 0 Then
+        For x = 1 To (Int(OS_Partitions / 2))
+            Print PartitionDescription$((x * 2) - 1); " boot partition";: Locate CsrLin, 70: Print ParSize((x * 2) - 1);
+            Locate CsrLin, 92: Print "FAT32";: Locate CsrLin, 110: Print Letter$((x * 2) - 1); ":"
+            Print PartitionDescription$(x * 2); " setup partition";: Locate CsrLin, 70: Print ParSize(x * 2);
+            Locate CsrLin, 92: Print "NTFS";: Locate CsrLin, 110: Print Letter$(x * 2); ":"
+        Next x
+    End If
+
+    If PE_Partitions > 0 Then
+        For x = 1 To PE_Partitions
+            Print PartitionDescription$(OS_Partitions + x); " boot partition";: Locate CsrLin, 70: Print ParSize(OS_Partitions + x);
+            Locate CsrLin, 92: Print "FAT32";: Locate CsrLin, 110: Print Letter$(OS_Partitions + x); ":"
+        Next x
+    End If
+
+    If Other_Partitions > 0 Then
+        For x = 1 To Other_Partitions
+            Print PartitionDescription$(OS_Partitions + PE_Partitions + x); " NTFS partition";: Locate CsrLin, 70: Print ParSize(OS_Partitions + PE_Partitions + x);
+            Locate CsrLin, 92: Print "NTFS";: Locate CsrLin, 110: Print Letter$(OS_Partitions + PE_Partitions + x); ":"
+        Next x
+    End If
+
+    Print
+    Print "If the last partition shows a size of 0, this indicates that the partition is set to occupy all remaining space."
+    Print
+    Input "Is the above information correct"; Temp$
+    YesOrNo Temp$
+Loop While YN$ = "X"
+Temp$ = YN$
+
+If Temp$ = "N" Then
+    Cls
+    Print "Please organize your information and run this routine again."
+    Pause
+    ChDir ProgramStartDir$: GoTo BeginProgram
+End If
+
+' Ask user if they want to hide drive letters for OS and Win PE / RE partitions.
+
+HideLetters$ = "N" ' Set an initial value
+
+If (OS_Partitions + PE_Partitions) > 0 Then
+    Do
+        Cls
+        Print "You have chosen to create bootable partitions. Normally, you would only need to interact with these when booting"
+        Print "your system from them. If you wish, the program can remove the drive letters from these partitions to keep things"
+        Print "tidy and free up some drive letters. The drive will still be bootable."
+        Print
+        Print "Note that the drive letters will only be hidden on this system. If you take the drive to another system it may"
+        Print "assign letters. Also, you can always unhide these partitions by simply opening Disk Manager and assigning letters."
+        Print
+        Input "Do you want to hide drive letters for operating system and Win PE / RE partitions"; HideLetters$
+        YesOrNo HideLetters$
+        HideLetters$ = Temp$
+    Loop While HideLetters$ = "X"
+End If
+
+Cls
+Print "Preparing the selected disk now. Please standby..."
+Print
+ff = FreeFile
+Open "temp.bat" For Output As #ff
+Print #ff, "@echo off"
+Print #ff, "(echo select disk"; DiskID
+
+For x = 1 To TotalPartitions
+
+    ' If the specified partition size is 0, this indicates that we want to allow that partition to occupy all remaining space.
+    ' Handle the sizing of this partition accordingly. Leving off the size= parameter in diskpart will cause all remaining
+    ' space to be used.
+
+    If ParSize(x) = 0 Then
+        Print #ff, "echo create partition primary"
+    Else
+        Print #ff, "echo create partition primary size="; LTrim$(Str$(ParSize(x)))
+    End If
+
+    Print #ff, "echo format fs="; ParType$(x); " quick label=PAR"; LTrim$(Str$(x))
+    Print #ff, "echo assign letter="; Letter$(x)
+Next x
+
+Print #ff, "echo exit"
+Print #ff, ") | diskpart > NUL"
+Close #ff
+
+Shell _Hide "temp.bat"
+
+If _FileExists("temp.bat") Then Kill "temp.bat"
+
+' Process OS partitions
+
+If OS_Count = 0 Then GoTo No_OS_Partitions
+
+PartitionCounter = 1
+For x = 1 To OS_Count
+    Cls
+    Print "Working on OS image"; x; "of"; OS_Count
+    Color 0, 10: Print PartitionDescription(PartitionCounter): Color 15
+    Print
+
+    ' mount the windows image.
+
+    MountISO SourcePath_Multi$(PartitionCounter)
+    CDROM$ = MountedImageDriveLetter$
+
+    ' Copy all files except the \sources folder to the first partition
+    ' make a directory called sources and copy only the boot.wim
+    ' on the first partition, create a folder called \sources. Copy all files from the original \sources EXCEPT boot.wim
+    ' on the second partition, create a folder called \sources. Copy all files from the original \sources EXCEPT boot.wim
+
+    ff = FreeFile
+    Open "TEMP.BAT" For Output As #ff
+    Print #ff, "@echo off"
+    Print #ff, "del WIM_File_Copy_Error.txt > NUL 2>&1"
+    Print #ff, "echo."
+    Print #ff, "echo *************************************************************"
+    Print #ff, "echo * Copying files. Be aware that this can take quite a while, *"
+    Print #ff, "echo * especially on the 2nd partition and with slower media.    *"
+    Print #ff, "echo * Please be patient and allow this process to finish.       *"
+    Print #ff, "echo *************************************************************"
+    Print #ff, "echo."
+    Print #ff, "echo Copying files to partition #"; LTrim$(Str$(PartitionCounter))
+
+    If ExcludeAutounattend$ = "N" Then
+        Print #ff, "robocopy "; CDROM$; "\ "; Letter$(PartitionCounter); ":\ /mir /xd sources /njs /256 > NUL"
+        Print #ff, "if %ERRORLEVEL% gtr 3 goto HandleError"
+    Else
+        Print #ff, "robocopy "; CDROM$; "\ "; Letter$(PartitionCounter); ":\ /mir /xf autounattend.xml /xd sources /njs /256 > NUL"
+        Print #ff, "if %ERRORLEVEL% gtr 3 goto HandleError"
+    End If
+
+    Print #ff, "robocopy "; CDROM$; "\sources "; Letter$(PartitionCounter); ":\sources boot.wim /njh /njs /256 > NUL"
+    Print #ff, "if %ERRORLEVEL% gtr 3 goto HandleError"
+    Print #ff, "echo Copying files to partition #"; LTrim$(Str$(PartitionCounter + 1))
+    Print #ff, "robocopy "; CDROM$; "\sources "; Letter$(PartitionCounter + 1); ":\sources /mir /njh /njs /xf boot.wim /256 > NUL"
+    Print #ff, "if %ERRORLEVEL% gtr 3 goto HandleError"
+    Print #ff, "goto cleanup"
+    Print #ff, ":HandleError"
+    Print #ff, "echo An error ocurred > WIM_File_Copy_Error.txt"
+    Print #ff, ":cleanup"
+    Print #ff, "powershell.exe -command "; Chr$(34); "Dismount-DiskImage "; Chr$(34); "'"; SourcePath_Multi$(PartitionCounter); "'"; Chr$(34); Chr$(34) + " > NUL"
+    Close #ff
+    Shell "TEMP.BAT"
+    If _FileExists("TEMP.BAT") Then Kill "TEMP.BAT"
+
+    ' Check for the existance of a file named "WIM_File_Copy_Error.txt". If such a file exists, it indicates that
+    ' that there was an error copying files with the above batch file. In that case, take the following actions:
+    '
+    ' 1) Display a warning to the user.
+    ' 2) Delete the "WIM_File_Copy_Error.txt" file.
+    ' 3) Abort this routine and return to the start of the program.
+
+    If _FileExists("WIM_File_Copy_Error.txt") Then
+        Cls
+        Print
+        Color 14, 4: Print "WARNING!";: Color 15: Print " There was an error copying files. This usually indicates that there was not enough space on the"
+        Print "destination. Please correct this situation and run this routine again."
+        Pause
+        ChDir ProgramStartDir$: GoTo BeginProgram
+    End If
+
+    ' Making the file ei.cfg on the partition 2, in the sources folder if the user wanted this file added.
+    ' If an ei.cfg already exists, leave it alone.
+
+    If CreateEiCfg$ = "Y" Then
+        Temp$ = Letter$(PartitionCounter + 1) + ":\sources\ei.cfg"
+
+        If Not (_FileExists(Temp$)) Then
+            ff = FreeFile
+            Open (Temp$) For Output As #ff
+            Print #ff, "[CHANNEL]"
+            Print #ff, "Retail"
+            Close #ff
+        End If
+
+    End If
+
+    PartitionCounter = PartitionCounter + 2
+
+Next x
+
+No_OS_Partitions:
+
+' Process any Win PE/RE Images
+
+PartitionCounter = OS_Partitions + 1
+
+If PE_Partitions = 0 Then GoTo No_PE_Partitions
+
+For x = 1 To PE_Partitions
+    Cls
+    Print "Working on PE/RE image"; x; "of"; PE_Partitions
+    Color 0, 10: Print PartitionDescription(PartitionCounter): Color 15
+    Print
+
+    ' mount the windows image.
+
+    MountISO SourcePath_Multi$(PartitionCounter)
+    CDROM$ = MountedImageDriveLetter$
+
+    ' Copy ALL files from source to destination
+
+    ff = FreeFile
+    Open "TEMP.BAT" For Output As #ff
+    Print #ff, "@echo off"
+    Print #ff, "del WIM_File_Copy_Error.txt > NUL 2>&1"
+    Print #ff, "echo."
+    Print #ff, "echo ************************************************"
+    Print #ff, "echo * Copying files. This may take a little while. *"
+    Print #ff, "echo ************************************************"
+    Print #ff, "echo."
+    Print #ff, "echo Copying files to partition #"; LTrim$(Str$(PartitionCounter))
+    Print #ff, "robocopy "; CDROM$; "\ "; Letter$(PartitionCounter); ":\ /mir /njs /256 > NUL"
+    Print #ff, "if %ERRORLEVEL% gtr 3 goto HandleError"
+    Print #ff, "goto cleanup"
+    Print #ff, ":HandleError"
+    Print #ff, "echo An error ocurred > WIM_File_Copy_Error.txt"
+    Print #ff, ":cleanup"
+    Print #ff, "powershell.exe -command "; Chr$(34); "Dismount-DiskImage "; Chr$(34); "'"; SourcePath_Multi$(PartitionCounter); "'"; Chr$(34); Chr$(34) + " > NUL"
+    Close #ff
+
+    Shell "TEMP.BAT"
+    If _FileExists("TEMP.BAT") Then Kill "TEMP.BAT"
+
+    ' Check for the existance of a file named "WIM_File_Copy_Error.txt". If such a file exists, it indicates that
+    ' that there was an error copying files with the above batch file. In that case, take the following actions:
+    '
+    ' 1) Display a warning to the user.
+    ' 2) Delete the "WIM_File_Copy_Error.txt" file.
+    ' 3) Abort this routine and return to the start of the program.
+
+    If _FileExists("WIM_File_Copy_Error.txt") Then
+        Cls
+        Print
+        Color 14, 4: Print "WARNING!";: Color 15: Print " There was an error copying files. This usually indicates that there was not enough space on the"
+        Print "destination. Please correct this situation and run this routine again."
+        Pause
+        ChDir ProgramStartDir$: GoTo BeginProgram
+    End If
+
+    PartitionCounter = PartitionCounter + 1
+
+Next x
+
+No_PE_Partitions:
+
+' No actions are needed for the generic partitions as they were already created previously
+' and no data needs to be copied to these partitions.
+
+If HideLetters$ = "N" Then GoTo DoneHidingLetters
+
+For x = 1 To (OS_Partitions + PE_Partitions)
+    Shell "mountvol " + Letter$(x) + ": /D"
+Next x
+
+DoneHidingLetters:
+
+
+
+
+
+
+
+
+
+
+
+
+' At this time, all operations are completed and we return to the main menu.
+
+Cls
+Print "Operations completed. Please be aware that when you boot from this media, the UEFI menu will not display friendly names"
+Print "for each boot entry. The names shown will be based upon the hardware device. The sample below shows an example of what"
+Print "this might look like. It will vary from system to system. Note that in this example, the three lines that show "; Chr$(34); "USB"
+Print "Hard Drive(UEFI) - SanDisk Extreme Pro 0"; Chr$(34); " are our bootable partitions."
+Print
+Print "    OS Boot Manager (UEFI) - Windows Boot Manager (Seagate Firecuda 510 SSD ZP1000GM30001)"
+Print "    USB Hard Drive(UEFI) - SanDisk Extreme Pro 0"
+Print "    USB Hard Drive(UEFI) - SanDisk Extreme Pro 0"
+Print "    USB Hard Drive(UEFI) - SanDisk Extreme Pro 0"
+Print "    Boot From EFI File"
+Print
+Pause
+Cls
+Print "Here is a summary of how we configured your disk:"
+Print
+Print "                  ";: Color 0, 10: Print "Description";: Color 15: Print "                                 ";: Color 0, 10: Print "Partition Size (in MB)";: Color 15
+Print "   ";: Color 0, 10: Print "Partition Type";: Color 15: Print "   ";: Color 0, 10: Print "Drive Letter": Color 15
+Print
+
+If OS_Partitions > 0 Then
+    For x = 1 To (Int(OS_Partitions / 2))
+        Print PartitionDescription$((x * 2) - 1); " boot partition";
+        Locate CsrLin, 70: Print ParSize((x * 2) - 1);
+        Locate CsrLin, 92: Print "FAT32";
+
+        If HideLetters$ = "Y" Then
+            Locate CsrLin, 109: Print "NONE"
+        Else
+            Locate CsrLin, 110: Print Letter$((x * 2) - 1); ":"
+        End If
+
+        Print PartitionDescription$(x * 2); " setup partition";
+        Locate CsrLin, 70: Print ParSize(x * 2);
+        Locate CsrLin, 92: Print "NTFS";
+
+        If HideLetters$ = "Y" Then
+            Locate CsrLin, 109: Print "NONE"
+        Else
+            Locate CsrLin, 110: Print Letter$(x * 2); ":"
+        End If
+
+    Next x
+End If
+
+If PE_Partitions > 0 Then
+    For x = 1 To PE_Partitions
+        Print PartitionDescription$(OS_Partitions + x); " boot partition";
+        Locate CsrLin, 70: Print ParSize(OS_Partitions + x);
+        Locate CsrLin, 92: Print "FAT32";
+
+        If HideLetters$ = "Y" Then
+            Locate CsrLin, 109: Print "NONE"
+        Else
+            Locate CsrLin, 110: Print Letter$(OS_Partitions + x); ":"
+        End If
+
+    Next x
+End If
+
+If Other_Partitions > 0 Then
+    For x = 1 To Other_Partitions
+        Print PartitionDescription$(OS_Partitions + PE_Partitions + x); " NTFS partition";
+        Locate CsrLin, 70: Print ParSize(OS_Partitions + PE_Partitions + x);
+        Locate CsrLin, 92: Print "NTFS";: Locate CsrLin, 110: Print Letter$(OS_Partitions + PE_Partitions + x); ":"
+    Next x
+End If
+
+Print
+Print "If the last partition shows a size of 0, this indicates that the partition is set to occupy all remaining space."
+Print
+Print "Note that only those partitions described as a boot partition will be displayed on the UEFI boot menu."
+Pause
+
+ChDir ProgramStartDir$: GoTo BeginProgram
+
+' End of mainroutine
+
 ' Subroutine - Shows patition information.
 
 ShowPartitionSizes:
@@ -5104,6 +5809,266 @@ End Select
 
 Return
 
+' Local subroutine
+' Display a list of disks and ask which one to use. If user needs more detail on a disk, display that detail.
+
+SelectDisk:
+
+Cls
+Print "Building a list of disks in the system..."
+
+GetDiskDetails
+
+' NOTE: Since a Disk ID of 0 may be valid on some systems (Disk 0 is not always the boot disk), we cannot assume that
+' a value of 0 is invalid. If the user simply hits ENTER in response to a numerical entry, that value would be 0,
+' but we don't want to consider an ENTER without an actual response to be valid. For this reason, we ask for a string
+' input where we can check for a nul input and flag that as invalid. We can then convert the string response into a
+' number.
+
+' At the end of this routine DiskID will hold the ID of the disk chosen by the user.
+
+' Init varaibles
+
+Temp$ = ""
+ValidDisk = 0
+
+AskForDiskID:
+
+Do
+    Cls
+    Print "Please note the number of the disk that you want to make bootable."
+    Print
+    Color 0, 14: Print ListOfDisks$: Color 15
+    Print "Description for each disk:"
+    Print
+    Color 0, 14
+
+    For x = 1 To NumberOfDisks
+        Print "Disk"; DiskIDList(x); "Description: "; DiskDetail$(x)
+    Next x
+
+    Color 15
+    Print
+    Input "Enter the disk number of the disk you want to make bootable: ", Temp$
+Loop While Temp$ = ""
+
+DiskID = Val(Temp$)
+
+' Since typing a non-numeric response would yield a val of 0, we need to do a check to see if what the user
+' entered was really a 0 or something else.
+
+If DiskID = 0 And Temp$ <> "0" Then
+    GoTo AskForDiskID
+End If
+
+For x = 1 To NumberOfDisks
+
+    If DiskID = DiskIDList(x) Then
+        ValidDisk = 1
+        GoTo ValidDiskCheckDone
+    End If
+
+Next x
+
+ValidDiskCheckDone:
+
+If ValidDisk = 0 Then
+    Cls
+    Print
+    Color 14, 4: Print "Invalid Disk Selected!";: Color 15: Print " Please enter one of the disk numbers shown by the program to be valid."
+    Pause
+    GoTo AskForDiskID
+End If
+
+Print
+Print "You have selected the following disk: ";: Color 0, 14: Print "Disk"; DiskID; "- "; DiskDetail$(x): Color 15
+Print
+Input "Is this correct"; Temp$
+YesOrNo Temp$
+Temp$ = YN$
+
+Select Case Temp$
+    Case "X", "N"
+        GoTo AskForDiskID
+    Case "Y"
+        Exit Select
+End Select
+
+Return
+
+Generic_Partition_Size:
+
+' Ask for the size to make a partition. Accepts input in the along with M for Megabytes, G for Gigabytes, and T for Terabytes.
+' After running this routine, the variable "ParSizeInMB$" will hold the size of the partition in MB as a string. This is useful
+' where we want to print references to the size without leading or training spaces.
+'
+' Note that text should be displayed to user before coming to this routine to explain what partition a size is being sought. This
+' routine only displays a generic prompt for the size of the partition so that it can be used universally.
+
+RedoPartitionSize_2:
+
+ParSizeInMB$ = "" ' Set initial value
+
+Print "Enter the size below followed by "; Chr$(34); "M"; Chr$(34); " for Megabytes, "; Chr$(34); "G"; Chr$(34); " for Gigabytes, or "; Chr$(34); "T"; Chr$(34); " for Terabytes."
+Print
+Print "Examples: 500M, 20G, 1T, 700m, 1g"
+Print
+Print "Enter the size for this partition: ";
+Input "", TempPartitionSize$
+TempUnit$ = UCase$(Right$(TempPartitionSize$, 1))
+TempValue = Val(TempPartitionSize$)
+Select Case TempUnit$
+    Case "M"
+        ParSizeInMB$ = Str$(TempValue)
+        GoTo PartitionUnitsValid_2
+    Case "G"
+        ParSizeInMB$ = Str$(TempValue * 1024)
+        GoTo PartitionUnitsValid_2
+    Case "T"
+        ParSizeInMB$ = Str$(TempValue * 1048576)
+        GoTo PartitionUnitsValid_2
+    Case Else
+
+        ' A valid entry was not made. We will return to the calling section of code. It's up to that code to reprompt for
+        'valid information and then call this routine again.
+
+        Return
+
+End Select
+
+PartitionUnitsValid_2:
+
+If (Val(ParSizeInMB$)) <= 100 Then
+    Cls
+    Color 14, 4: Print "This program expects a minimum partition size of 100 MB.": Color 15
+    Pause
+
+    ' A valid entry was not made. We will return to the calling section of code. It's up to that code to reprompt for
+    'valid information and then call this routine again.
+
+    Return
+
+End If
+
+Return
+
+' Get drive letter to assign to each partition
+' The user can choose to manually assign drive letters to the partitions being created on the bootable media
+' or allow the program to automatically assign drive letters.
+
+SelectAutoOrManual:
+
+ReDim Letter(TotalPartitions) As String
+
+Cls
+Print "The program will automatically assign drive letters to the"; TotalPartitions; "partitions that will be created on the drive. However,"
+Print "if you prefer, you can manually assign drive letters."
+Print
+Input "Do you want to manually assign drive letters"; ManualAssignment$
+
+YesOrNo ManualAssignment$
+
+Select Case YN$
+    Case "Y"
+        GoTo ManualAssign
+    Case "N"
+        GoTo AutoAssign
+    Case "X"
+        GoTo SelectAutoOrManual
+End Select
+
+ManualAssign:
+
+' Allow the user to manually choose drive letters
+
+For x = 1 To TotalPartitions
+    Do
+
+        RepeatLetter:
+
+        Cls
+        Print "For all"; TotalPartitions; "partitions, enter the drive letter to assign. Enter only the letter without a colon (:)."
+        Print
+        Letter$(x) = "" ' Set initial value
+        Print "Enter the drive letter for partition #";: Color 0, 10: Print x;: Color 15: Print ": ";
+        Input "", Letter$(x)
+    Loop While Letter$(x) = ""
+
+    Letter$(x) = UCase$(Letter$(x))
+
+    If (Len(Letter$(x)) > 1) Or (Letter$(x)) = "" Or ((Asc(Letter$(x))) < 65) Or ((Asc(Letter$(x))) > 90) Then
+        Print
+        Color 14, 4: Print "That was not a valid entry. Please try again.": Color 15
+        Print
+        GoTo RepeatLetter
+    End If
+
+    If _DirExists(Letter$(x) + ":") Then
+        Print
+        Color 14, 4: Print "That drive letter is already in use.": Color 15
+        Pause
+        GoTo RepeatLetter
+    End If
+
+Next x
+
+GoTo LetterAssignmentDone
+
+AutoAssign:
+
+' Automatically assign drive letters
+
+' To auto assign drive letters, we go through a loop checking to see if drive letters C:, D:, E:, etc. are already in use.
+' If in use, we move on to the next drive letter. After the first free drive letter is picked, we repeat the same process
+' but we resume checking for free drive letters with the letter after the last one we just assigned. To determine if a
+' drive letter is available, we first check to if the drive letter exists using a _DIREXISTS command. The problem with
+' this is that _DIREXISTS will indicate that a BitLocker encrypted drive does NOT exist if it is locked. As a result,
+' if _DIREXISTS indicates that a drive letter does NOT exist, we follow up by running the command "manage-bde -status D:",
+' where D: is the drive letter we want to test. We grab the output of that command and check for the string "could not be
+' opened by BitLocker". If we find that string, then that drive letter is not BitLocker encrypted and so it really is a free
+' drive letter in that case.
+
+LettersAssigned = 0 ' Keep track of how many drive letters were assigned. Once equal to the number of partitions, we are done.
+
+Restore DriveLetterData
+
+For y = 1 To 24
+    Read Letter$(LettersAssigned + 1)
+
+    If Not (_DirExists(Letter$(LettersAssigned + 1) + ":")) Then
+        Cmd$ = "manage-bde -status " + Letter$(LettersAssigned + 1) + ": > BitLockerStatus.txt"
+        Shell Cmd$
+        ff = FreeFile
+        Open "BitLockerStatus.txt" For Input As #ff
+        FileLength = LOF(ff)
+        Temp$ = Input$(FileLength, ff)
+        Close #ff
+        Kill "BitLockerStatus.txt"
+
+        If InStr(Temp$, "could not be opened by BitLocker") Then
+            LettersAssigned = LettersAssigned + 1
+        End If
+
+        If LettersAssigned = TotalPartitions Then GoTo LetterAssignmentDone
+
+    End If
+
+Next y
+
+' The FOR loop should only complete if we run out of drive letters. We need to warn the user about this and how they can correct
+' the issue. The program will then end.
+
+Cls
+Print "Not enough drive letters were available to assign to all partititions!"
+Print
+Print "Solution: Please free up some drive letters and then re-run this program."
+Print "The program will now end."
+Pause
+System
+
+LetterAssignmentDone:
+
+Return
 
 ' ********************************************************************************************
 ' * Create a bootable Windows ISO image that can include multiple editions and architectures *
@@ -7858,7 +8823,7 @@ Print "    2) Inject Windows updates into one or more Windows editions and creat
 Print "    3) Inject drivers into one or more Windows editions and create a multi edition bootable image               "
 Print "    4) Inject boot-critical drivers into one or more Windows editions and create a multi edition bootable image "
 Color 0, 10
-Print "    5) Make a bootable drive from a Windows ISO image or update an already existing drive                       "
+Print "    5) Make a bootable drive from a Windows ISO image and Windows PE / RE images                                "
 Print "    6) Create a bootable Windows ISO image that can include multiple editions                                   "
 Print "    7) Create a bootable ISO image from Windows files in a folder                                               "
 Print "    8) Reorganize the contents of a Windows ISO image                                                           "
@@ -8696,9 +9661,9 @@ Print " Version "; ProgramVersion$; "                "
 Print " Released "; ProgramReleaseDate$; "             "
 Color 0, 10
 Locate 3, 38
-Print " Program Help - Make a bootable drive from a Windows ISO image ";
+Print " Program Help - Make a bootable drive from a Windows ISO image and ";
 Locate 4, 38
-Print "                or update an already existing drive            ";
+Print "                and Windows PE / RE images             ";
 Locate 9, 1
 Color 15
 Print "    1) General information about this routine"
@@ -8739,6 +9704,13 @@ Cls
 Print "General Information About This Routine"
 Print "======================================"
 Print
+Print "This routine now has two major options - review the information related to the option that you wish to choose on the"
+Print "pages below."
+Pause
+Cls
+Print "Option 1 - MBR Boot Media"
+Print "========================="
+Print
 Print "This routine will allow you to create bootable media from a bootable Windows ISO image. You will also be given the"
 Print "choice to create additional partitions on that media that can be used to store other data. If you do choose to create"
 Print "additional partitions, this routine can also BitLocker encrypt those partitions for you if you wish."
@@ -8759,6 +9731,29 @@ Print "that other data when you want to update the bootable portion of the disk.
 Print "if media previously created with this routine is found, it will be refreshed automatically without you having to choose"
 Print "what drive to update. If more than one such drive is found, then you will be asked to identify the disk to be updated."
 Pause
+Cls
+Print "Option 2 - GPT Boot Image"
+Print "========================="
+Print
+Print "This mode has some advantages but works only on UEFI / x64 based systems. Media created using this method wil not work"
+Print "on BIOS / x86 based systems. The advantages of this method:"
+Print
+Print "1) Can boot multiple different operating systems or applications."
+Print "2) Allows for disks greater than 2TB in size."
+Print "3) Can support more than 4 primary partitions (we support 15 with this app, limit is actually 128)."
+Print
+Print "You can add multiple Windows images such as Windows 10 and 11 to the same disk. In addition, you can add Windows RE / PE"
+Print "based media such as rescue and recovery disks for Macrium Reflect, etc. When booting from a disk made with procedure,"
+Print "your system will display one instance of the boot device for each bootable partition. Note that this boot entry is based"
+Print "upon the hardware disk device, and not what the contents are, so unfortunately it won't be able to display a description"
+Print "of what each boot entry is. You should make note of the order in which you add options. Note that for each operating"
+Print "system entry you add, we will need to create two physical partitions. Win PE / RE media and generic partitions only"
+Print "create one partition each. Note that while an operating system (Windows 10 or 11) will create two partitions, only one"
+Print "boot item is shown from the UEFI menu. As an example, if you create media that has Windows 10 and 11 (two operating"
+Print "systems), two Win PE / RE based programs, and one generic partition, you will see 4 selectable lines on the UEFI boot"
+Print "menu and seven partitions will be created."
+Pause
+
 GoTo HelpMakeMultiBootImage
 
 ' Help Topic: Make a bootable drive from a Windows ISO image or update an already existing drive > Disk limitations
@@ -8769,10 +9764,14 @@ Cls
 Print "Disk Limitations"
 Print "================"
 Print
-Print "Be aware that for greatest compatibility, you should use media that is no larger than 2 TB in size. If you use media"
-Print "that is larger than 2 TB in size, the program will give you the option to initialize the media to 2 TB in size for the"
-Print "greatest compatibility, or to initialize the disk to its full capacity but sacrificing the ability to be booted on"
-Print "older BIOS based systems."
+Print "Be aware that for greatest compatibility, you should use media that is no larger than 2 TB in size for option 1 (MBR"
+Print "Boot Image). If you use media that is larger than 2 TB in size, the program will give you the option to initialize"
+Print "the media to 2 TB in size for the greatest compatibility, or to initialize the disk to its full capacity but sacrificing"
+Print "the ability to be booted on BIOS based systems."
+Print
+Print "For option 2 (GPT Boot Image), you are not limited to a 2TB size. In addition, you can have up to 128 primary"
+Print "partitions rather than just 4. This program supports 15 partitions. Be aware that disks created in this mode only work"
+Print "with UEFI / x64 based systems."
 Pause
 GoTo HelpMakeMultiBootImage
 
@@ -9783,7 +10782,7 @@ Sub CleanPath (Path$)
 
     ' Remove trailing backslash from a path
 
-    ' To use this subroutine: Pass the path this sub, the sub will return the path
+    ' To use this subroutine: Pass the path to this sub, the sub will return the path
     ' without a trailing backslash in Temp$.
 
     Temp$ = Path$
@@ -11602,6 +12601,7 @@ Sub Pause
     If ScriptingChoice$ = "R" Then
         Print #5, ":: Pressing <ENTER> to continue after a pause."
         Print #5, "<ENTER>"
+        Print #5, ""
     End If
 
     ' If a script is being played back, exit this subroutine since there is no need to pause when
@@ -11671,20 +12671,28 @@ Sub DisplayFile (FileName$)
             Print Text$
         Next x
 
+        ' When recording and playing back a script, the number of screens of information displayed can vary which might throw off a script. To
+        ' handle this, we use the following logic:
+
+        ' During this loop, we display the index information one screen at a time. When playing back a script, we don't want pauses after each screen of
+        ' information is displayed. During the recording of a script, we want to pause so the user can see the information, but we do do not want to record
+        ' the pause between screens of displayed information because this will throw off playback. As a result, we flip off recording, pause, turn recording
+        ' back on again. If we have skippedrecording operations, then pause after each screen is displayed.
+
         Select Case ScriptingChoice$
+            Case "P"
+                ' Don't pause between screens of information when playing back a script
             Case "R"
                 ' Temporarily flip script recording off so that the pauses when displaying screens of information is not recorded, then flip it back on.
-                ' We do this because the number of screens of information displayed can vary which can throw off a script.
                 ScriptingChoice$ = "S"
                 Pause
                 ScriptingChoice$ = "R"
-            Case "P"
-                ' Don't pause between screens of information when playing back a script
-            Case "S"
-                ' Pause between screens of information
+            Case Else
+                ' Pause between screens of information. We want to pause for screens of information where we have chosen to skip scripting operations.
+                ' In that case, ScriptingChoice$ will be set to "S". However, for operations where scripting is not used, even though we are not
+                ' performing scripting, ScriptingChoice$ will not be set (it will be an empty string). The CASE ELSE statement covers us for both states.
                 Pause
         End Select
-
     Loop
 
     Close #FileNum
@@ -11833,8 +12841,15 @@ Sub EiCfgHandling
 
     If ScriptingChoice$ = "R" Then
         Print #5, ":: Do you want to inject an EI.CFG file into your final image?"
-        Print #5, CreateEiCfg$
-        Print #5, "::"
+        If UCase$(Left$(CreateEiCfg$, 1)) = "H" Then
+            Print #5, ":: Help for this option was requested."
+            Print #5, "HELP"
+        ElseIf CreateEiCfg$ = "" Then
+            Print #5, "<ENTER>"
+        Else
+            Print #5, CreateEiCfg$
+        End If
+        Print #5, ""
     End If
 
     If UCase$(Left$(CreateEiCfg$, 1)) = "H" Then
@@ -11852,12 +12867,6 @@ Sub EiCfgHandling
         Print
         Print "Note that if you use an answer file to perform an unattended setup, this file will have no effect since the answer file"
         Print "specifies the edition to be installed."
-
-        If ScriptingChoice$ = "R" Then
-            Print #5, ":: HELP was selected in response to whether an EI.CFG file should be injected."
-            Print #5, "::"
-        End If
-
         Pause
         GoTo EiCfg
     End If
@@ -11872,8 +12881,8 @@ Sub EiCfgHandling
         Color 15
 
         If ScriptingChoice$ = "R" Then
-            Print #5, ":: An invalid response was provided."
-            Print #5, "::"
+            Print #5, ":: The above response was not valid."
+            Print #5, ""
         End If
 
         Pause
@@ -11935,7 +12944,7 @@ Sub GetDiskDetails
     ' This subroutine will gather details about disks available in the system. After the subroutine has
     ' completed, the following information will be available:
     '
-    ' NumberOfDisks - This will indicate the number of didks seen by the system
+    ' NumberOfDisks - This will indicate the number of disks seen by the system
     ' DiskIDList() - This array will hold the Disk ID number for each disk. Note that this is needed because
     '     disk ID numbers are not always sequential. For example, a system may have disk ID numbers 1,2,4,5
     '     Note the missing "3".
@@ -12114,22 +13123,32 @@ Sub Scripting (Procedure$)
                 GoTo Scripting_MakeSelection
             End If
 
-            ' The recorded script file has comments. We need to create a temporary script file that stips out all the comments.
+            ' We need to create a temporary script file that stips out all the comments and blank lines.
 
             ff1 = FreeFile
             Open (ScriptFile$) For Input As #ff1
             ff2 = FreeFile
             Open ("WIM_SCRIPT.TXT") For Output As #ff2
 
+            ' Take different actions based upon what is contained in the line being read
+
             Do
                 Line Input #ff1, LineRead$
-                If Left$(LineRead$, 2) <> "::" Then
-                    If Left$(LineRead$, 7) = "<ENTER>" Then
-                        Print #ff2, ""
-                    Else
-                        Print #ff2, LineRead$
-                    End If
+                If Left$(LineRead$, 2) = "::" Then
+                    ' This line is a comment. Ignore it
+                    _Continue
                 End If
+                If LineRead$ = "" Then
+                    ' This is a blank line. Ignore it
+                    _Continue
+                End If
+                If LineRead$ = "<ENTER>" Then
+                    ' This line is significant. We need to save an ENTER to the file.
+                    Print #ff2, ""
+                    _Continue
+                End If
+                ' This line is significant. It contains a response that needs to be saved.
+                Print #ff2, LineRead$
             Loop Until EOF(ff1)
 
             Close #ff2
@@ -12139,14 +13158,15 @@ Sub Scripting (Procedure$)
             Print #5, "::::::::::::::::::::::::::::::::::::::::::::"
             Print #5, ":: Script to "; Procedure$; "  ::"
             Print #5, "::::::::::::::::::::::::::::::::::::::::::::"
-            Print #5, "::"
+            Print #5, ""
             Print #5, "::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
             Print #5, ":: A response shown as <ENTER> simply indicates that <ENTER> was pressed in response to the query.  ::"
             Print #5, ":: For a pause where user is asked to press any key to continue, we always script <ENTER> no matter ::"
-            Print #5, ":: What the actual response was. When pressing <ENTER> would accept a default value, we script that ::"
-            Print #5, ":: value rather than <ENTER>.                                                                       ::"
+            Print #5, ":: what the actual response was. When pressing <ENTER> would accept a default value, we script that ::"
+            Print #5, ":: value rather than <ENTER>. When manually modifying a script, start comments with 2 colons (::).  ::"
+            Print #5, ":: You can use blank lines to make the script easier to read. Blank lines are ignored.              ::"
             Print #5, "::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
-            Print #5, "::"
+            Print #5, ""
 
             ' Perform a check first to see if a file named "WIM_SCRIPT.TXT" already exists in the program folder.
 
@@ -12171,38 +13191,6 @@ Sub Scripting (Procedure$)
             Pause
             GoTo Scripting_MakeSelection
     End Select
-End Sub
-
-
-Sub MakeScriptFriendly
-
-    ' Make the script friendly. This simply takes the places where the user hit <ENTER> in response to something rather than
-    ' supplying an answer, and replacing the blank line with the tag <ENTER> to make it easier to understand.
-
-    ' Store next available file numbers in ff1 and ff2
-
-    Dim ff1 As Integer
-    Dim ff2 As Integer
-    Dim LineRead As String ' Holds one line at a time read from a file
-
-    ff1 = FreeFile
-    Open ("WIM_SCRIPT.TXT") For Input As #ff1
-    ff2 = FreeFile
-    Open ("WIM_SCRIPT.TXT.TMP") For Output As #ff2
-
-    Do
-        Line Input #ff1, LineRead$
-        If LineRead$ = "" Then
-            Print #ff2, "<ENTER>"
-        Else
-            Print #ff2, LineRead$
-        End If
-    Loop Until EOF(ff1)
-
-    Close #ff2
-    Close #ff1
-    Shell _Hide "del WIM_SCRIPT.TXT"
-    Shell _Hide "ren WIM_SCRIPT.TXT.TMP WIM_SCRIPT.TXT"
 End Sub
 
 
@@ -13113,4 +14101,20 @@ End Sub
 ' does not need to inquire about each file because you are specifying each file unambiguously.
 '
 ' In addition, the script files are now a little easier to read and manually modify.
+'
+' 18.2.1.169 - September 27, 2021
+' Further refinements to the scripting. The script files are much easier to read and edit. Blank lines are now legal and not interpreted
+' as an <ENTER>. An <ENTER> is now explicitly shown with an "<ENTER>" tag in the script.
+'
+' 18.2.2.170 - September 27, 2021
+' Bug fix. In the process of adjusting scripting settings, we caused a display problem for those routines that want to show index details
+' but do not honor scripting settings (playback, record, or skip). This has been resolved.
+'
+' 19.0.0.172 - September 5, 2021 (The Windows 11 Release Day Edition)
+' This is a major new version!
+' The option to create bootable media now has 2 options. The previously existing option to create a single Windows boot option along
+' with multiple generic partitions to hold other data remains as was. However, we now have the option to create media that allows for
+' multiple bootable partitions. For example, you could boot Windows 10 setup / recovery media, Windows 11 setup / recovery media, Macrium
+' reflect recovery media, and any other Windows PE/RE based bootable media, as well as several generic partitions for holding any other
+' desired data. This functionality is only for x64 / UEFI based systems and not BIOS or x86 based systems.
 
