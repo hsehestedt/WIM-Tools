@@ -3,13 +3,15 @@ WIM (Windows Image Management) Tools is a set of tools to create, modify, and ma
 
 NOTE: You can download everything needed for this project by simply grabbing the WIM_Tools.zip. Technically, you will only need the WIM Tools.exe but the .zip file will provide the source code and User Guide as well.  
 
-Version: 18.2.0.168.164  
-Release Date: Sep 26, 2021  
+Version: 19.0.0.172  
+Release Date: Oct 5, 2021  
 
 
 *****************************************************************
 Here Are Of Some Of The Things That You Can Do With WIM Tools
 *****************************************************************
+
+- NEW - The program can now take multiple Windows images as well as Win PE / RE images and create a single media that can be booted from any of those images. That same media can hold additional generic partitions which allow for the storage of other data on the same bootable media.
 
 - Inject Windows updates into one or more editions of Windows (Home, Pro, Education, etc.) and then combine them all into a single Windows image.
 
