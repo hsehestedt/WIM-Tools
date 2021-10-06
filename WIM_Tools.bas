@@ -18,7 +18,7 @@ Option _Explicit
 Rem $DYNAMIC
 $ExeIcon:'iso.ico'
 $VersionInfo:CompanyName=Hannes Sehestedt
-$VersionInfo:FILEVERSION#=19,0,0,172
+$VersionInfo:FILEVERSION#=19,0,1,173
 $VersionInfo:ProductName=WIM Tools Dual Architecture Edition
 $VersionInfo:LegalCopyright=(c) 2021 by Hannes Sehestedt
 $Console:Only
@@ -88,7 +88,7 @@ End If
 Dim Shared ProgramVersion As String ' Holds the current program version. This is displayed in the console title throughout the program
 Dim ProgramReleaseDate As String
 
-ProgramVersion$ = "19.0.0.172"
+ProgramVersion$ = "19.0.1.173"
 ProgramReleaseDate$ = "Oct 05, 2021"
 
 
@@ -5457,7 +5457,7 @@ If (OS_Partitions + PE_Partitions) > 0 Then
         Print
         Input "Do you want to hide drive letters for operating system and Win PE / RE partitions"; HideLetters$
         YesOrNo HideLetters$
-        HideLetters$ = Temp$
+        HideLetters$ = YN$
     Loop While HideLetters$ = "X"
 End If
 
@@ -14110,11 +14110,15 @@ End Sub
 ' Bug fix. In the process of adjusting scripting settings, we caused a display problem for those routines that want to show index details
 ' but do not honor scripting settings (playback, record, or skip). This has been resolved.
 '
-' 19.0.0.172 - September 5, 2021 (The Windows 11 Release Day Edition)
+' 19.0.0.172 - October 5, 2021 (The Windows 11 Release Day Edition)
 ' This is a major new version!
 ' The option to create bootable media now has 2 options. The previously existing option to create a single Windows boot option along
 ' with multiple generic partitions to hold other data remains as was. However, we now have the option to create media that allows for
 ' multiple bootable partitions. For example, you could boot Windows 10 setup / recovery media, Windows 11 setup / recovery media, Macrium
 ' reflect recovery media, and any other Windows PE/RE based bootable media, as well as several generic partitions for holding any other
 ' desired data. This functionality is only for x64 / UEFI based systems and not BIOS or x86 based systems.
+'
+' 19.0.1.173 - October 5, 2021
+' Bug fix. Even if a user did not want to hide operating system and Windows PE / RE partition drive letters, we were hiding them
+' anyway. This has been fixed.
 
