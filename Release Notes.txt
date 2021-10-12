@@ -2,27 +2,27 @@
 * Changes in the Current Release *
 **********************************
 
-v19.0.1.173 - A quick bug fix. We were hiding partitions even when a user chose option not to hide partitions. This has been resolved.
-
-v19.0.0.172 - For the routine to create bootable media, we've add a whole new capability. Up until now, you could create a single bootable item but you could add additional partitions for other data on the same disk. We have now added the capability to create bootable media that can allow you to choose between multiple items. For example, you might be able to choose between Windows 10, Windows 11, a Macrium Reflect recovery disk, and more. At the same time you could still have additional partitions. Note that this option works only with x64 UEFI based systems, however, especially now with the release of Windows 11, x86 BIOS based systems are becoming less common and you may never need to deal it. Note that the new mode for creation of multiple bootable partitions does not yet have BitLocker support or the ability to refresh partitions with updates. For the moment, both of these operations can be easily accomplished manually but those features are coming soon.
+v19.0.3.175 - Fixed a critical bug where we were skipping an entire section of code because we accidentally commented out a line of code.
 
 Files affected:
 
 WIM_Tools.bas - QB64 Source Code
 WIM_Tools.exe - Compiled Executable
-WIM Tools User Guide.pdf
+
 
 The following files are unchanged:
 
 ISO.ico
+WIM Tools User Guide.pdf
 
 
 **********************
 * Previous Releases: *
 **********************
 
+v19.0.1.173 - A quick bug fix. We were hiding partitions even when a user chose option not to hide partitions. This has been resolved.
 
-v18.2.0.168 - Made some significant changes specifically to better accomodate scripting. If the number of files in a source folder changed, this would break scripting because it changes your responses when the program asks if you want to update each individual file. To eliminate this problem, the program will now allow you to specify a full path including a file name. This way the program does not need to inquire about each file because you are specifying each file unambiguously. In addition, the script files are now a little easier to read and manually modify.
+v19.0.0.172 - For the routine to create bootable media, we've add a whole new capability. Up until now, you could create a single bootable item but you could add additional partitions for other data on the same disk. We have now added the capability to create bootable media that can allow you to choose between multiple items. For example, you might be able to choose between Windows 10, Windows 11, a Macrium Reflect recovery disk, and more. At the same time you could still have additional partitions. Note that this option works only with x64 UEFI based systems, however, especially now with the release of Windows 11, x86 BIOS based systems are becoming less common and you may never need to deal it. Note that the new mode for creation of multiple bootable partitions does not yet have BitLocker support or the ability to refresh partitions with updates. For the moment, both of these operations can be easily accomplished manually but those features are coming soon.v18.2.0.168 - Made some significant changes specifically to better accomodate scripting. If the number of files in a source folder changed, this would break scripting because it changes your responses when the program asks if you want to update each individual file. To eliminate this problem, the program will now allow you to specify a full path including a file name. This way the program does not need to inquire about each file because you are specifying each file unambiguously. In addition, the script files are now a little easier to read and manually modify.
 
 v18.1.8.167 - Fixed a bug that only happens when program goes back to start and reinitializes. For example, after a routine is run to completion and we return to the main menu. Right near the start of the program we stored the current working directory in a variable so that we knew the location from where the program was started. However, we then change the working directory to a temporary location where we can create temporary files. When jumping back to the start, we clear all variables and loose track of the original working directory. As a result, it is essential that we change the current working directory back to the original location before we jump back to the beginning of the program.
 

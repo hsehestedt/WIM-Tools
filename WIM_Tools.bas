@@ -18,7 +18,7 @@ Option _Explicit
 Rem $DYNAMIC
 $ExeIcon:'iso.ico'
 $VersionInfo:CompanyName=Hannes Sehestedt
-$VersionInfo:FILEVERSION#=19,0,1,173
+$VersionInfo:FILEVERSION#=19,0,3,175
 $VersionInfo:ProductName=WIM Tools Dual Architecture Edition
 $VersionInfo:LegalCopyright=(c) 2021 by Hannes Sehestedt
 $Console:Only
@@ -88,8 +88,8 @@ End If
 Dim Shared ProgramVersion As String ' Holds the current program version. This is displayed in the console title throughout the program
 Dim ProgramReleaseDate As String
 
-ProgramVersion$ = "19.0.1.173"
-ProgramReleaseDate$ = "Oct 05, 2021"
+ProgramVersion$ = "19.0.3.175"
+ProgramReleaseDate$ = "Oct 12, 2021"
 
 
 ' ******************************************************************************************************************
@@ -4383,8 +4383,7 @@ For x = 1 To AdditionalPartitions
     End If
 Next x
 
-'test code
-'GoSub SelectDisk
+GoSub SelectDisk
 
 ' We are done with the variable ListOfDisks$. Let's free up the space it used by clearing it.
 
@@ -7460,7 +7459,10 @@ End If
 ReorgGetDestination:
 
 Cls
-Input "Enter the destination for the project: ", Destination$
+Print "Enter the destination path for the project. Please note that we will save the file using the same name that is has now."
+Print "If you enter the same path where the source file is located, the old file will be replaced with the updated file."
+Print
+Input "Enter the destination for the project (path only, no file name or extension): ", Destination$
 CleanPath Destination$
 Destination$ = Temp$
 
@@ -14121,4 +14123,10 @@ End Sub
 ' 19.0.1.173 - October 5, 2021
 ' Bug fix. Even if a user did not want to hide operating system and Windows PE / RE partition drive letters, we were hiding them
 ' anyway. This has been fixed.
+'
+' 19.0.2.174 - October 11, 2021
+' Minor change. Reworded some text in the routine that reorders Windows editions within an image for clarity.
+'
+' 19.0.3.175 - Octoner 12, 2021
+' Fixed a bug where we were skipping over an entire section of code becase we had a call to a subroutine commented out.
 
