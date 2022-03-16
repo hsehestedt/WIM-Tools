@@ -18,9 +18,9 @@ Option _Explicit
 Rem $DYNAMIC
 $ExeIcon:'iso.ico'
 $VersionInfo:CompanyName=Hannes Sehestedt
-$VersionInfo:FILEVERSION#=19,1,4,182
+$VersionInfo:FILEVERSION#=19,3,4,197
 $VersionInfo:ProductName=WIM Tools Dual Architecture Edition
-$VersionInfo:LegalCopyright=(c) 2021 by Hannes Sehestedt
+$VersionInfo:LegalCopyright=(c) 2022 by Hannes Sehestedt
 $Console:Only
 _Source _Console
 Width 120, 30
@@ -88,8 +88,8 @@ End If
 Dim Shared ProgramVersion As String ' Holds the current program version. This is displayed in the console title throughout the program
 Dim ProgramReleaseDate As String
 
-ProgramVersion$ = "19.1.4.182"
-ProgramReleaseDate$ = "Oct 25, 2021"
+ProgramVersion$ = "19.3.4.197"
+ProgramReleaseDate$ = "Mar 16, 2022"
 
 
 ' ******************************************************************************************************************
@@ -122,7 +122,6 @@ Dim AnswerFilePresent As String
 Dim Arc As String ' Used to store architecture type in the routine to create a VHD
 Dim Architecture As Integer ' Flag that gets set to 1 for a single architecture image, 2 for dual architecture, and 0 if an invalid image
 Dim ArchitectureChoice As String ' Search code for ArchitectureChoice$ for a comment explaining usage
-Dim AutoSize As String ' Set to "Y" if the last partition is to be autosized to occupy all remaining space
 Dim AvailableSpace As Long ' Used for tracking available space on a disk
 Dim AvailableSpaceString As String ' Used for tracking available space on a disk
 Dim bcd_ff As Integer ' Holds a free file number for file access to BCD files
@@ -133,6 +132,7 @@ Dim Column As Integer ' Used for positioning cursor on screen
 Dim CurrentImage As Integer ' A counter used to keep track of the image number being processed
 Dim CurrentIndex As String ' A counter used to keep track of the index number within an image being processed
 Dim CurrentIndexCount As Integer
+Dim CurrentTime As String ' Date and Time combined with a comma as a separator
 Dim Description As String ' Holds the description metadata to be assigned to a Windows edition within an image
 Dim DescriptionFromFile As String ' Holds the DESCRIPTION field of an image parsed from WIM_Info.txt file
 Dim DestArcFlag As String ' A flag that varies wit the architecture type used to build out a final path
@@ -164,7 +164,6 @@ Dim FileLength As Single
 Dim FileSourceType As String
 Dim FinalImageName As String
 Dim FSType As String 'Set to either NTFS of EXFAT to determine what filesystem user wants to use
-Dim HideLetters As String ' Set to "Y" to indicate that drive letter for this partition should be removed
 Dim Highest_Single As Integer
 Dim Highest_x64 As Integer
 Dim Highest_x86 As Integer
@@ -181,7 +180,7 @@ Dim IndexVal As Integer
 Dim InjectionMode As String ' From the main menu, set to "UPDATES" if user wants to inject Windows updates, or "DRIVERS" if user wants to inject drivers.
 Dim InstallFile As String
 Dim InstallFileTest As String
-Dim LCU_Updates_Avail As String
+Dim LCU_Update_Avail As String
 Dim LettersAssigned As Integer
 Dim MainLoopCount As Integer ' Counter to indicate which loop we are in.
 Dim MakeBootablePath As String
@@ -190,6 +189,7 @@ Dim ManualAssignment As String
 Dim MaxLabelLength As Integer ' The allowable length for a volume label - 11 for exFAT, 32 for NTFS
 Dim MediaLetter As String
 Dim MenuSelection As Integer ' Will hold the number of the menu option selected by the user
+Dim Midnight As Integer ' Just before creating an ISO image, set to "1" if we are within the two seconds prior to midnight, otherwise, set to "0"
 Dim MoreFolders As String
 Dim MountDir As String ' Used to hold text while reading from a file looking for a DISM mount location
 Dim Multiplier As Single
@@ -197,23 +197,14 @@ Dim NameFromFile As String ' Holds the NAME field of an image parsed from WIM_In
 Dim NewLabel As String
 Dim NumberOfx64Updates As Integer
 Dim NumberOfx86Updates As Integer
-Dim Offset As Integer
 Dim OpsPendingFileCheck As String
-Dim OS_Count As Integer ' The number of operating systems to be added to an image (Note that number of partitions for OS will be 2 per OS)
-Dim OS_Partitions As Integer ' The number of Windows operating system partitions to be created on a GPT boot disk
-Dim Other_Partitions As Integer ' The number of non-bootable partitions to be created on a GPT boot disk
 Dim Other_Updates_Avail As String
 Dim OutputFileName As String ' For Windows multiboot image program, holds the final name of the ISO image to be created (file name and extension only, no path)
 Dim Override As String
 Dim ParSizeInMB As String ' Holds the size of a partition as a string
-Dim ParSize(0) As Long ' For a GPT boot media project, holds the size of each partition being created.
-Dim ParType(0) As String ' For a GPT boot media project, holds the file system type of each partition being created.
 Dim Par1InstancesFound As Integer
 Dim Par2InstancesFound As Integer
-Dim PartitionCounter As Integer ' used as a counter when processing partitions
-Dim PartitionDescription(0) As String ' Friendly description for each partition in a GPT boot media project
 Dim PE_Files_Avail As String
-Dim PE_Partitions As Integer ' The number of Windows PE based program partitions to be created on a GPT boot disk
 Dim ProjectArchitecture As String ' In Multiboot program, hold the overall project architecture type (x86, x64, or DUAL)
 Dim ProjectType As String
 Dim ReadLine As String
@@ -223,11 +214,15 @@ Dim RowEnd As Integer
 Dim Row As Integer ' Used for positioning cursor on screen
 Dim SafeOS_DU_Avail As String
 Dim Setup_DU As String ' Holds the location of the Setup Dynamic update file
+Dim Silent As String
+Dim SingleImageTag As String
+Dim SingleImageCount As Integer
+Dim SourceArcFlag As String
+Dim SourcePath As String ' Holds the path containing the files to be injected into an ISO image file
 Dim SourceFolder As String ' Will hold a folder name
 Dim SourceFolderIsAFile As String ' If SourceFolder$ actually contains a filename rather than a path, set this to "Y", else set to "N"
 Dim SourceImage As String
-Dim SourcePath_Multi(0) As String ' Holds the source ISO image path in a GPT boot media project
-Dim SSU_Update_Avail As String
+Dim SRC As String
 Dim TempLong As Long
 Dim TempPath As String ' A temporary variable used while manipulating strings
 Dim TempValue As Long
@@ -236,13 +231,6 @@ Dim TotalImagesToUpdate As Integer
 Dim TotalIndexCount As Integer
 Dim TotalPartitions As Integer ' The total number of partitions that need to be created on a bootable thumb drive
 Dim TotalSpaceNeeded As Long
-Dim Silent As String
-Dim SingleImageTag As String
-Dim SingleImageCount As Integer
-Dim SourceArcFlag As String
-Dim SourcePath As String ' Holds the path containing the files to be injected into an ISO image file
-Dim SRC As String
-Dim SSU_Updates_Avail As String
 Dim TempPartitionSize As String
 Dim TempUnit As String
 Dim TotalFiles As Integer
@@ -485,12 +473,12 @@ Print "    1) Inject Windows updates into one or more Windows editions and creat
 Print "    2) Inject drivers into one or more Windows editions and create a multi edition bootable image               "
 Print "    3) Inject boot-critical drivers into one or more Windows editions and create a multi edition bootable image "
 Color 0, 10
-Print "    4) Make or update a bootable drive from one or more Windows ISO images and Windows PE / RE images           "
+Print "    4) Make or update a bootable drive from a Windows ISO image                                                 "
 Print "    5) Create a bootable Windows ISO image that can include multiple editions                                   "
 Print "    6) Create a bootable ISO image from Windows files in a folder                                               "
 Print "    7) Reorganize the contents of a Windows ISO image                                                           "
 Color 0, 3
-Print "    8) Get WIM info - display basic info for each WIM in an ISO image                                           "
+Print "    8) Get WIM info - display basic info for each WIM in an ISO image and display Windows build number          "
 Print "    9) Modify the NAME and DESCRIPTION values for entries in a WIM file                                         "
 Color 0, 6
 Print "   10) Export drivers from this system                                                                          "
@@ -706,15 +694,15 @@ Do
 
 Loop While SourceFolder$ = ""
 
-'if the path ends with .ISO then we need to determine if this path is a file name or a folder name.
+' Determine if the source is a file name or a folder name.
+
+If _DirExists(SourceFolder$) Then
+    ' The name specified is a legit folder name
+    SourceFolderIsAFile$ = "N"
+    GoTo FolderNameOK
+End If
 
 If UCase$(Right$(SourceFolder$, 4)) = ".ISO" Then
-
-    If _DirExists(SourceFolder$) Then
-        ' The name specified is a legit folder name
-        SourceFolderIsAFile$ = "N"
-        GoTo FolderNameOK
-    End If
 
     If _FileExists(SourceFolder$) Then
         SourceFolderIsAFile$ = "Y"
@@ -864,7 +852,7 @@ If UpdateAll$ = "Y" Then
             Case "NONE"
                 Cls
                 Color 14, 4: Print "WARNING!";: Color 15: Print " An invalid file has been selected."
-                Print "Check the following file to make sure that it is valid. It needs to contain INSTALL.WIM file(s), not INSTALL.ESD."
+                Print "Check the following file to make sure that it is valid. It needs to contain install.wim file(s), not INSTALL.ESD."
                 Print
                 Print "Path: ";: Color 10: Print Left$(Temp$, ((_InStrRev(Temp$, "\"))) - 1): Color 15
                 Print "File: ";: Color 10: Print Right$(Temp$, (Len(Temp$) - (_InStrRev(Temp$, "\")))): Color 15
@@ -958,7 +946,7 @@ For x = 1 To FileCount
                 Case "NONE"
                     Cls
                     Color 14, 4: Print "WARNING!";: Color 15: Print " An invalid file has been selected."
-                    Print "Check the following file to make sure that it is valid. It needs to contain INSTALL.WIM file(s), not INSTALL.ESD."
+                    Print "Check the following file to make sure that it is valid. It needs to contain install.wim file(s), not INSTALL.ESD."
                     Print
                     Print "Path: ";: Color 10: Print Left$(Temp$, ((_InStrRev(Temp$, "\"))) - 1): Color 15
                     Print "File: ";: Color 10: Print Right$(Temp$, (Len(Temp$) - (_InStrRev(Temp$, "\")))): Color 15
@@ -1914,9 +1902,9 @@ For x = 1 To TotalFiles
                     SourceArcFlag$ = ""
                     DestArcFlag$ = "WIM_x64"
                     Cmd$ = "robocopy " + CHR$(34) + MountedImageDriveLetter$ + SourceArcFlag$ + "\sources" + CHR$(34) + " " + CHR$(34) + DestinationFolder$ + "\WinPE"_
-                    + CHR$(34) + " BOOT.WIM /A-:RHS > NUL"
+                    + CHR$(34) + " boot.wim /A-:RHS > NUL"
                     Shell _Hide Cmd$
-                    Cmd$ = "rename " + Chr$(34) + DestinationFolder$ + "\WinPE\BOOT.WIM" + Chr$(34) + " BOOT_x64.wim"
+                    Cmd$ = "rename " + Chr$(34) + DestinationFolder$ + "\WinPE\boot.wim" + Chr$(34) + " BOOT_x64.wim"
                     Shell _Hide Cmd$
                 Case "x86"
                     x86ExportCount = x86ExportCount + 1
@@ -1929,9 +1917,9 @@ For x = 1 To TotalFiles
                     SourceArcFlag$ = ""
                     DestArcFlag$ = "WIM_x86"
                     Cmd$ = "robocopy " + CHR$(34) + MountedImageDriveLetter$ + SourceArcFlag$ + "\sources" + CHR$(34) + " " + CHR$(34) + DestinationFolder$ + "\WinPE"_
-                    + CHR$(34) + " BOOT.WIM /A-:RHS > NUL"
+                    + CHR$(34) + " boot.wim /A-:RHS > NUL"
                     Shell _Hide Cmd$
-                    Cmd$ = "rename " + Chr$(34) + DestinationFolder$ + "\WinPE\BOOT.WIM" + Chr$(34) + " BOOT_x86.wim"
+                    Cmd$ = "rename " + Chr$(34) + DestinationFolder$ + "\WinPE\boot.wim" + Chr$(34) + " BOOT_x86.wim"
                     Shell _Hide Cmd$
                 Case "x64_DUAL"
                     x64ExportCount = x64ExportCount + 1
@@ -1944,9 +1932,9 @@ For x = 1 To TotalFiles
                     SourceArcFlag$ = "\x64"
                     DestArcFlag$ = "WIM_x64"
                     Cmd$ = "robocopy " + CHR$(34) + MountedImageDriveLetter$ + SourceArcFlag$ + "\sources" + CHR$(34) + " " + CHR$(34) + DestinationFolder$ + "\WinPE"_
-                    + CHR$(34) + " BOOT.WIM /A-:RHS > NUL"
+                    + CHR$(34) + " boot.wim /A-:RHS > NUL"
                     Shell _Hide Cmd$
-                    Cmd$ = "rename " + Chr$(34) + DestinationFolder$ + "\WinPE\BOOT.WIM" + Chr$(34) + " BOOT_x64.wim"
+                    Cmd$ = "rename " + Chr$(34) + DestinationFolder$ + "\WinPE\boot.wim" + Chr$(34) + " BOOT_x64.wim"
                     Shell _Hide Cmd$
                 Case "x86_DUAL"
                     x86ExportCount = x86ExportCount + 1
@@ -1959,9 +1947,9 @@ For x = 1 To TotalFiles
                     SourceArcFlag$ = "\x86"
                     DestArcFlag$ = "WIM_x86"
                     Cmd$ = "robocopy " + CHR$(34) + MountedImageDriveLetter$ + SourceArcFlag$ + "\sources" + CHR$(34) + " " + CHR$(34) + DestinationFolder$ + "\WinPE"_
-                    + CHR$(34) + " BOOT.WIM /A-:RHS > NUL"
+                    + CHR$(34) + " boot.wim /A-:RHS > NUL"
                     Shell _Hide Cmd$
-                    Cmd$ = "rename " + Chr$(34) + DestinationFolder$ + "\WinPE\BOOT.WIM" + Chr$(34) + " BOOT_x86.wim"
+                    Cmd$ = "rename " + Chr$(34) + DestinationFolder$ + "\WinPE\boot.wim" + Chr$(34) + " BOOT_x86.wim"
                     Shell _Hide Cmd$
             End Select
             CurrentIndex$ = LTrim$(Str$(IndexList(x, y)))
@@ -2046,12 +2034,16 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
 
         ' Mount the WinRE Image if updates are available
 
+        ' Note that the SSU update is now combined with the LCU update. Since these are no longer separate updates, we need to search for the LCU update
+        ' since it could potentially include an SSU update. The WinRE image does NOT need to have an LCU update applied to it, however, since the SSU
+        ' update is now combined with the LCU update, we need to check for an LCU update.
+
         FileTypeSearch x64Updates$ + "\LCU\", ".MSU", "N"
 
         If NumberOfFiles > 0 Then
-            SSU_Update_Avail$ = "Y"
+            LCU_Update_Avail$ = "Y"
         Else
-            SSU_Update_Avail$ = "N"
+            LCU_Update_Avail$ = "N"
         End If
 
         FileTypeSearch x64Updates$ + "\SafeOS_DU\", ".CAB", "N"
@@ -2062,15 +2054,15 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
             SafeOS_DU_Avail$ = "N"
         End If
 
-        If (SSU_Update_Avail$ = "N") And (SafeOS_DU_Avail$ = "N") Then GoTo Skip_WINRE_Update_x64
+        If (LCU_Update_Avail$ = "N") And (SafeOS_DU_Avail$ = "N") Then GoTo Skip_WINRE_Update_x64
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WinRE\winre.wim" + CHR$(34)_
         + " /Index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
-        ' Add SSU Update to WinRE.WIM
+        ' Add SSU Update to WinRE.WIM using the combined LCU / SSU package
 
-        If SSU_Update_Avail$ = "Y" Then
+        If LCU_Update_Avail$ = "Y" Then
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34)_
             + " /PackagePath=" + CHR$(34) + x64Updates$ + "\LCU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
             Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
@@ -2100,7 +2092,7 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
 
         ' export index 1
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Export-Image /SourceImageFile:" + CHR$(34) + DestinationFolder$ + "\WinRE\WINRE.WIM" + CHR$(34)_
+        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Export-Image /SourceImageFile:" + CHR$(34) + DestinationFolder$ + "\WinRE\winre.wim" + CHR$(34)_
         + " /SourceIndex:1 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\WINRE_x64.WIM" + CHR$(34) + " /LogPath=" + CHR$(34)_
         + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
@@ -2114,42 +2106,26 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
 
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 4
 
-        ' Mount the WinPE Image - Index 1, if SSU or LCU updates exist
+        ' Mount the WinPE Image - Index 1, if LCU / SSU update exists
 
         FileTypeSearch x64Updates$ + "\LCU\", ".MSU", "N"
 
         If NumberOfFiles > 0 Then
-            SSU_Updates_Avail$ = "Y"
+            LCU_Update_Avail$ = "Y"
         Else
-            SSU_Updates_Avail$ = "N"
-        End If
-
-        FileTypeSearch x64Updates$ + "\LCU\", ".MSU", "N"
-
-        If NumberOfFiles > 0 Then
-            LCU_Updates_Avail$ = "Y"
-        Else
-            LCU_Updates_Avail$ = "N"
+            LCU_Update_Avail$ = "N"
         End If
 
         If Skip_PE_Updates$ = "Y" Then GoTo Export_PE_Index1
-        If (SSU_Updates_Avail$ = "N") And (LCU_Updates_Avail$ = "N") Then GoTo Export_PE_Index1
+        If (LCU_Update_Avail$ = "N") Then GoTo Export_PE_Index1
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WINPE\BOOT_x64.WIM" + CHR$(34)_
         + " /Index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
-        ' Add SSU Update to BOOT.WIM
+        ' Add LCU /SSU Update to BOOT.WIM, Index 1
 
-        If SSU_Updates_Avail$ = "Y" Then
-            Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34)_
-            + " /PackagePath=" + CHR$(34) + x64Updates$ + "\LCU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
-            Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
-        End If
-
-        ' Add LCU Update to BOOT.WIM
-
-        If LCU_Updates_Avail$ = "Y" Then
+        If LCU_Update_Avail$ = "Y" Then
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34)_
             + " /PackagePath=" + CHR$(34) + x64Updates$ + "\LCU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
             Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
@@ -2193,23 +2169,15 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
 
         ' Mount the WinPE Image - Index 2, if updates are available
 
-        If (SSU_Updates_Avail$ = "N") And (LCU_Updates_Avail$ = "N") And (PE_Files_Avail$ = "N") Then GoTo Export_PE_Index2
+        If (LCU_Update_Avail$ = "N") And (PE_Files_Avail$ = "N") Then GoTo Export_PE_Index2
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WINPE\BOOT_x64.WIM" + CHR$(34)_
         + " /Index:2 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
-        ' Add SSU Update to BOOT.WIM
+        ' Add LCU / SSU Update to BOOT.WIM, Index 2
 
-        If (SSU_Updates_Avail$ = "Y") And (Skip_PE_Updates$ = "N") Then
-            Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34)_
-            + " /PackagePath=" + CHR$(34) + x64Updates$ + "\LCU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
-            Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
-        End If
-
-        ' Add LCU Update to BOOT.WIM
-
-        If (LCU_Updates_Avail$ = "Y") And (Skip_PE_Updates$ = "N") Then
+        If (LCU_Update_Avail$ = "Y") And (Skip_PE_Updates$ = "N") Then
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34)_
             + " /PackagePath=" + CHR$(34) + x64Updates$ + "\LCU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
             Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
@@ -2254,33 +2222,26 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
         + " /SourceIndex:2 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x64.WIM" + CHR$(34) + " /LogPath=" + CHR$(34)_
         + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
-        Cmd$ = "move /y " + Chr$(34) + DestinationFolder$ + "\winpe\boot_x64.wim" + Chr$(34) + " " + Chr$(34) + DestinationFolder$ + "\assets" + Chr$(34)
-        Shell _Hide Cmd$
-        Shell _Hide "del " + Chr$(34) + DestinationFolder$ + "\winpe\boot_x64.wim" + Chr$(34)
 
         SkipWinPEx64:
 
-        AddUpdatesStatusDisplay CurrentImage, TotalImages, 6
-
-        If SSU_Updates_Avail$ = "Y" Then
-            Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /PackagePath="_
-            + CHR$(34) + x64Updates$ + "\LCU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
-            Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
-        End If
+        ' Add combined LCU / SSU update to main OS (install.wim) if available
 
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 7
 
-        If LCU_Updates_Avail$ = "Y" Then
+        If LCU_Update_Avail$ = "Y" Then
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /PackagePath="_
             + CHR$(34) + x64Updates$ + "\LCU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
             Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         End If
 
+        ' Copy the WinRE.wim back into the main OS (install.wim)
+
         Cmd$ = "copy " + CHR$(34) + DestinationFolder$ + "\Assets\winre_x64.wim" + CHR$(34) + " " + CHR$(34) + DestinationFolder$_
-        + "\MOUNT\Windows\System32\Recovery\WinRE.WIM" + CHR$(34)
+        + "\MOUNT\Windows\System32\Recovery\winre.wim" + CHR$(34)
         Shell _Hide Cmd$
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 8
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Cleanup-Image /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34)_
+Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Cleanup-Image /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34)_
         + " /StartComponentCleanup /ResetBase /ScratchDir:" + CHR$(34) + DestinationFolder$ + "\Temp" + CHR$(34) + " /LogPath=" + CHR$(34)_
         + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
@@ -2382,12 +2343,16 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
 
         ' Mount the WinRE Image if updates are available
 
+        ' Note that the SSU update is now combined with the LCU update. Since these are no longer separate updates, we need to search for the LCU update
+        ' since it could potentially include an SSU update. The WinRE image does NOT need to have an LCU update applied to it, however, since the SSU
+        ' update is now combined with the LCU update, we need to check for an LCU update.
+
         FileTypeSearch x86Updates$ + "\LCU\", ".MSU", "N"
 
         If NumberOfFiles > 0 Then
-            SSU_Update_Avail$ = "Y"
+            LCU_Update_Avail$ = "Y"
         Else
-            SSU_Update_Avail$ = "N"
+            LCU_Update_Avail$ = "N"
         End If
 
         FileTypeSearch x86Updates$ + "\SafeOS_DU\", ".CAB", "N"
@@ -2398,15 +2363,15 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
             SafeOS_DU_Avail$ = "N"
         End If
 
-        If (SSU_Update_Avail$ = "N") And (SafeOS_DU_Avail$ = "N") Then GoTo Skip_WINRE_Update_x86
+        If (LCU_Update_Avail$ = "N") And (SafeOS_DU_Avail$ = "N") Then GoTo Skip_WINRE_Update_x86
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WinRE\winre.wim" + CHR$(34)_
         + " /Index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
-        ' Add SSU Update to WinRE.WIM
+        ' Add SSU Update to WinRE.WIM from the combined LCU / SSU update
 
-        If SSU_Update_Avail$ = "Y" Then
+        If LCU_Update_Avail$ = "Y" Then
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34) + " /PackagePath=" + CHR$(34)_
             + x86Updates$ + "\LCU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
             Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
@@ -2436,7 +2401,7 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
 
         ' export index 1
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Export-Image /SourceImageFile:" + CHR$(34) + DestinationFolder$ + "\WinRE\WINRE.WIM" + CHR$(34)_
+        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Export-Image /SourceImageFile:" + CHR$(34) + DestinationFolder$ + "\WinRE\winre.wim" + CHR$(34)_
         + " /SourceIndex:1 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\WINRE_x86.WIM" + CHR$(34) + " /LogPath=" + CHR$(34)_
         + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
@@ -2452,42 +2417,26 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
 
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 4
 
-        ' Mount the WinPE Image - Index 1, if SSU or LCU updates exist
+        ' Mount the WinPE Image - Index 1, if LCU / SSU update exists
 
         FileTypeSearch x86Updates$ + "\LCU\", ".MSU", "N"
 
         If NumberOfFiles > 0 Then
-            SSU_Updates_Avail$ = "Y"
+            LCU_Update_Avail$ = "Y"
         Else
-            SSU_Updates_Avail$ = "N"
-        End If
-
-        FileTypeSearch x86Updates$ + "\LCU\", ".MSU", "N"
-
-        If NumberOfFiles > 0 Then
-            LCU_Updates_Avail$ = "Y"
-        Else
-            LCU_Updates_Avail$ = "N"
+            LCU_Update_Avail$ = "N"
         End If
 
         If Skip_PE_Updates$ = "Y" Then GoTo Export_PE_Index1_x86
-        If (SSU_Updates_Avail$ = "N") And (LCU_Updates_Avail$ = "N") Then GoTo Export_PE_Index1_x86
+        If (LCU_Update_Avail$ = "N") Then GoTo Export_PE_Index1_x86
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WINPE\BOOT_x86.WIM" + CHR$(34)_
         + " /Index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
-        ' Add SSU Update to BOOT.WIM
+        ' Add LCU / SSU Update to BOOT.WIM, Index 1
 
-        If (SSU_Updates_Avail$ = "Y") And (Skip_PE_Updates$ = "N") Then
-            Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34)_
-            + " /PackagePath=" + CHR$(34) + x86Updates$ + "\LCU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
-            Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
-        End If
-
-        ' Add LCU Update to BOOT.WIM
-
-        If (LCU_Updates_Avail$ = "Y") And (Skip_PE_Updates$ = "N") Then
+        If (LCU_Update_Avail$ = "Y") And (Skip_PE_Updates$ = "N") Then
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /PackagePath="_
             + CHR$(34) + x86Updates$ + "\LCU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
             Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
@@ -2530,23 +2479,15 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
 
         ' Mount the WinPE Image - Index 2, if updates are available
 
-        If (SSU_Updates_Avail$ = "N") And (LCU_Updates_Avail$ = "N") And (PE_Files_Avail$ = "N") Then GoTo Export_PE_Index_x86
+        If (LCU_Update_Avail$ = "N") And (PE_Files_Avail$ = "N") Then GoTo Export_PE_Index_x86
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WINPE\BOOT_x86.WIM" + CHR$(34)_
         + " /Index:2 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
-        ' Add SSU Update to BOOT.WIM
+        ' Add LCU / SSU Update to BOOT.WIM, Index 2
 
-        If SSU_Updates_Avail$ = "Y" Then
-            Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /PackagePath="_
-            + CHR$(34) + x86Updates$ + "\LCU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
-            Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
-        End If
-
-        ' Add LCU Update to BOOT.WIM
-
-        If LCU_Updates_Avail$ = "Y" Then
+        If LCU_Update_Avail$ = "Y" Then
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /PackagePath="_
             + CHR$(34) + x86Updates$ + "\LCU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
             Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
@@ -2592,32 +2533,22 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
         + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
-        Cmd$ = "move /y " + Chr$(34) + DestinationFolder$ + "\winpe\boot_x86.wim" + Chr$(34) + " " + Chr$(34) + DestinationFolder$ + "\assets" + Chr$(34)
-        Shell _Hide Cmd$
-        Shell _Hide "del " + Chr$(34) + DestinationFolder$ + "\winpe\boot_x86.wim" + Chr$(34)
-
         ' The WinRE and WinPE components have been updated. We will now proceed with updating of the main OS (install.wim).
 
         SkipWinPEx86:
 
-        AddUpdatesStatusDisplay CurrentImage, TotalImages, 6
-
-        If SSU_Updates_Avail$ = "Y" Then
-            Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /PackagePath="_
-            + CHR$(34) + x86Updates$ + "\LCU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
-            Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
-        End If
+        ' Add updates to main OS
 
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 7
 
-        If LCU_Updates_Avail$ = "Y" Then
+        If LCU_Update_Avail$ = "Y" Then
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /PackagePath="_
             + CHR$(34) + x86Updates$ + "\LCU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
             Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         End If
 
         Cmd$ = "copy " + CHR$(34) + DestinationFolder$ + "\Assets\winre_x86.wim" + CHR$(34) + " " + CHR$(34) + DestinationFolder$_
-        + "\MOUNT\Windows\System32\Recovery\WinRE.WIM" + CHR$(34)
+        + "\MOUNT\Windows\System32\Recovery\winre.wim" + CHR$(34)
         Shell _Hide Cmd$
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 8
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Cleanup-Image /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34)_
@@ -2719,7 +2650,7 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "BCD") Then
 
         ' export index 1
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Export-Image /SourceImageFile:" + CHR$(34) + DestinationFolder$ + "\WinRE\WINRE.WIM" + CHR$(34)_
+        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Export-Image /SourceImageFile:" + CHR$(34) + DestinationFolder$ + "\WinRE\winre.wim" + CHR$(34)_
         + " /SourceIndex:1 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\WINRE_x64.WIM" + CHR$(34) + " /LogPath=" + CHR$(34)_
         + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
@@ -2809,7 +2740,7 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "BCD") Then
         SkipWinPEx64_BCD:
 
         Cmd$ = "copy " + CHR$(34) + DestinationFolder$ + "\Assets\winre_x64.wim" + CHR$(34) + " " + CHR$(34) + DestinationFolder$_
-        + "\MOUNT\Windows\System32\Recovery\WinRE.WIM" + CHR$(34)
+        + "\MOUNT\Windows\System32\Recovery\winre.wim" + CHR$(34)
         Shell _Hide Cmd$
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 55
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Cleanup-Image /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34)_
@@ -2891,7 +2822,7 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "BCD") Then
 
         ' export index 1
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Export-Image /SourceImageFile:" + CHR$(34) + DestinationFolder$ + "\WinRE\WINRE.WIM" + CHR$(34)_
+        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Export-Image /SourceImageFile:" + CHR$(34) + DestinationFolder$ + "\WinRE\winre.wim" + CHR$(34)_
         + " /SourceIndex:1 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\WINRE_x86.WIM" + CHR$(34) + " /LogPath=" + CHR$(34)_
         + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
@@ -2982,7 +2913,7 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "BCD") Then
         SkipWinPEx86_BCD:
 
         Cmd$ = "copy " + CHR$(34) + DestinationFolder$ + "\Assets\winre_x86.wim" + CHR$(34) + " " + CHR$(34) + DestinationFolder$_
-        + "\MOUNT\Windows\System32\Recovery\WinRE.WIM" + CHR$(34)
+        + "\MOUNT\Windows\System32\Recovery\winre.wim" + CHR$(34)
         Shell _Hide Cmd$
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 55
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Cleanup-Image /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34)_
@@ -3352,17 +3283,30 @@ End Select
 
 If ProjectType$ = "DUAL" Then
     If AllFilesAreSameArc = 1 Then
-Cmd$ = "move /Y " + CHR$(34) + DestinationFolder$ + "\WIM_x64\install.wim " + CHR$(34) + " " + CHR$(34) + DestinationFolder$ + "\ISO_Files"_
-        + "\Sources" + CHR$(34) + " > NUL"
-        Shell _Hide Cmd$
-        Cmd$ = "move /Y " + CHR$(34) + DestinationFolder$ + "\WIM_x86\install.wim " + CHR$(34) + " " + CHR$(34) + DestinationFolder$ + "\ISO_Files"_
-        + "\Sources" + CHR$(34) + " > NUL"
-        Shell _Hide Cmd$
+
+        If x64UpdateImageCount > 0 Then
+            For x = 1 To x64UpdateImageCount
+Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Export-Image /SourceImageFile:" + Chr$(34) + DestinationFolder$ + "\WIM_x64\install.wim"_
+             + Chr$(34) + " /SourceIndex:" + LTrim$(Str$(x)) + " /DestinationImageFile:" + Chr$(34) + DestinationFolder$ + "\ISO_Files\Sources\install.wim"_
+              + Chr$(34) + " /LogPath=" + Chr$(34) + DestinationFolder$ + "\Logs\dism.log" + Chr$(34)
+                Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
+            Next x
+        End If
+
+        If x86UpdateImageCount > 0 Then
+            For x = 1 To x86UpdateImageCount
+Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Export-Image /SourceImageFile:" + Chr$(34) + DestinationFolder$ + "\WIM_x86\install.wim"_
+             + Chr$(34) + " /SourceIndex:" + LTrim$(Str$(x)) + " /DestinationImageFile:" + Chr$(34) + DestinationFolder$ + "\ISO_Files\Sources\install.wim"_
+              + Chr$(34) + " /LogPath=" + Chr$(34) + DestinationFolder$ + "\Logs\dism.log" + Chr$(34)
+                Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
+            Next x
+        End If
+
         Cmd$ = "move /Y " + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x64.WIM " + CHR$(34) + " " + CHR$(34) + DestinationFolder$ + "\ISO_Files"_
-        + "\Sources\BOOT.WIM" + CHR$(34) + " > NUL"
+        + "\Sources\boot.wim" + CHR$(34) + " > NUL"
         Shell _Hide Cmd$
         Cmd$ = "move /Y " + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x86.WIM " + CHR$(34) + " " + CHR$(34) + DestinationFolder$ + "\ISO_Files"_
-        + "\Sources\BOOT.WIM" + CHR$(34) + " > NUL"
+        + "\Sources\boot.wim" + CHR$(34) + " > NUL"
         Shell _Hide Cmd$
         Cmd$ = "robocopy " + CHR$(34) + DestinationFolder$ + "\Setup_DU_x64" + CHR$(34) + " " + CHR$(34) + DestinationFolder$ + "\ISO_Files" + "\Sources"_
         + CHR$(34) + " *.* /e > NUL"
@@ -3372,15 +3316,30 @@ Cmd$ = "move /Y " + CHR$(34) + DestinationFolder$ + "\WIM_x64\install.wim " + CH
         + "\Sources" + CHR$(34) + " *.* /e > NUL"
         Shell _Hide Cmd$
     Else
-        Cmd$ = "move /Y " + Chr$(34) + DestinationFolder$ + "\WIM_x64\install.wim " + Chr$(34) + " " + Chr$(34) + DestinationFolder$ + "\ISO_Files\x64\Sources" + Chr$(34) + " > NUL"
-        Shell _Hide Cmd$
-        Cmd$ = "move /Y " + Chr$(34) + DestinationFolder$ + "\WIM_x86\install.wim " + Chr$(34) + " " + Chr$(34) + DestinationFolder$ + "\ISO_Files\x86\Sources" + Chr$(34) + " > NUL"
-        Shell _Hide Cmd$
+
+        If x64UpdateImageCount > 0 Then
+            For x = 1 To x64UpdateImageCount
+Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Export-Image /SourceImageFile:" + Chr$(34) + DestinationFolder$ + "\WIM_x64\install.wim"_
+             + Chr$(34) + " /SourceIndex:" + LTrim$(Str$(x)) + " /DestinationImageFile:" + Chr$(34) + DestinationFolder$ + "\ISO_Files\x64\Sources\install.wim"_
+              + Chr$(34) + " /LogPath=" + Chr$(34) + DestinationFolder$ + "\Logs\dism.log" + Chr$(34)
+                Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
+            Next x
+        End If
+
+        If x86UpdateImageCount > 0 Then
+            For x = 1 To x86UpdateImageCount
+Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Export-Image /SourceImageFile:" + Chr$(34) + DestinationFolder$ + "\WIM_x86\install.wim"_
+             + Chr$(34) + " /SourceIndex:" + LTrim$(Str$(x)) + " /DestinationImageFile:" + Chr$(34) + DestinationFolder$ + "\ISO_Files\x86\Sources\install.wim"_
+              + Chr$(34) + " /LogPath=" + Chr$(34) + DestinationFolder$ + "\Logs\dism.log" + Chr$(34)
+                Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
+            Next x
+        End If
+
         Cmd$ = "move /Y " + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x64.WIM " + CHR$(34) + " " + CHR$(34) + DestinationFolder$_
-        + "\ISO_Files\x64\Sources\BOOT.WIM" + CHR$(34) + " > NUL"
+        + "\ISO_Files\x64\Sources\boot.wim" + CHR$(34) + " > NUL"
         Shell _Hide Cmd$
         Cmd$ = "move /Y " + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x86.WIM " + CHR$(34) + " " + CHR$(34) + DestinationFolder$_
-        + "\ISO_Files\x86\Sources\BOOT.WIM" + CHR$(34) + " > NUL"
+        + "\ISO_Files\x86\Sources\boot.wim" + CHR$(34) + " > NUL"
         Shell _Hide Cmd$
         Cmd$ = "robocopy " + Chr$(34) + DestinationFolder$ + "\Setup_DU_x64" + Chr$(34) + " " + Chr$(34) + DestinationFolder$ + "\ISO_Files\x64\Sources" + Chr$(34) + " *.* /e > NUL"
         Shell _Hide Cmd$
@@ -3395,27 +3354,44 @@ If ProjectType$ = "SINGLE" Then
         If _FileExists(Temp$) Then
             Cmd$ = "md " + Chr$(34) + DestinationFolder$ + "\ISO_Files\Sources" + Chr$(34) + " > NUL"
             Shell _Hide Cmd$
-            Cmd$ = "move /Y " + Chr$(34) + DestinationFolder$ + "\WIM_x64\install.wim " + Chr$(34) + " " + Chr$(34) + DestinationFolder$ + "\ISO_Files\Sources" + Chr$(34) + " > NUL"
-            Shell _Hide Cmd$
+
+            If x64UpdateImageCount > 0 Then
+                For x = 1 To x64UpdateImageCount
+Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Export-Image /SourceImageFile:" + Chr$(34) + DestinationFolder$ + "\WIM_x64\install.wim"_
+             + Chr$(34) + " /SourceIndex:" + LTrim$(Str$(x)) + " /DestinationImageFile:" + Chr$(34) + DestinationFolder$ + "\ISO_Files\Sources\install.wim"_
+              + Chr$(34) + " /LogPath=" + Chr$(34) + DestinationFolder$ + "\Logs\dism.log" + Chr$(34)
+                    Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
+                Next x
+            End If
+
             Cmd$ = "move /Y " + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x64.WIM " + CHR$(34) + " " + CHR$(34) + DestinationFolder$_
-            + "\ISO_Files\Sources\BOOT.WIM" + CHR$(34) + " > NUL"
+            + "\ISO_Files\Sources\boot.wim" + CHR$(34) + " > NUL"
             Shell _Hide Cmd$
                         Cmd$ = "robocopy " + CHR$(34) + DestinationFolder$ + "\Setup_DU_x64" + CHR$(34) + " " + CHR$(34) + DestinationFolder$_
                        + "\ISO_Files\Sources" + CHR$(34) + " *.* /e > NUL"
             Shell _Hide Cmd$
         End If
     End If
+
     If x86UpdateImageCount > 0 Then
         Temp$ = DestinationFolder$ + "\WIM_x86\install.wim"
         If _FileExists(Temp$) Then
             Cmd$ = "md " + Chr$(34) + DestinationFolder$ + "\ISO_Files\Sources" + Chr$(34) + " > NUL"
             Shell _Hide Cmd$
-            Cmd$ = "move /Y " + Chr$(34) + DestinationFolder$ + "\WIM_x86\install.wim " + Chr$(34) + " " + Chr$(34) + DestinationFolder$ + "\ISO_Files\Sources" + Chr$(34) + " > NUL"
-            Shell _Hide Cmd$
+
+            If x86UpdateImageCount > 0 Then
+                For x = 1 To x86UpdateImageCount
+Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Export-Image /SourceImageFile:" + Chr$(34) + DestinationFolder$ + "\WIM_x86\install.wim"_
+             + Chr$(34) + " /SourceIndex:" + LTrim$(Str$(x)) + " /DestinationImageFile:" + Chr$(34) + DestinationFolder$ + "\ISO_Files\Sources\install.wim"_
+              + Chr$(34) + " /LogPath=" + Chr$(34) + DestinationFolder$ + "\Logs\dism.log" + Chr$(34)
+                    Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
+                Next x
+            End If
+
             Cmd$ = "move /Y " + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x86.WIM " + CHR$(34) + " " + CHR$(34) + DestinationFolder$_
-            + "\ISO_Files\Sources\BOOT.WIM" + CHR$(34) + " > NUL"
+            + "\ISO_Files\Sources\boot.wim" + CHR$(34) + " > NUL"
             Shell _Hide Cmd$
-            Cmd$ = "robocopy " + CHR$(34) + DestinationFolder$ + "\Setup_DU_x86" + CHR$(34) + " " + CHR$(34) + DestinationFolder$_
+Cmd$ = "robocopy " + CHR$(34) + DestinationFolder$ + "\Setup_DU_x86" + CHR$(34) + " " + CHR$(34) + DestinationFolder$_
             + "\ISO_Files\Sources" + CHR$(34) + " *.* /e > NUL"
             Shell _Hide Cmd$
         End If
@@ -3536,7 +3512,18 @@ If _FileExists(DestinationFolder$ + "\ISO_Files\autounattend.xml") Then
 Else AnswerFilePresent = "N"
 End If
 
-Cmd$ = CHR$(34) + OSCDIMGLocation$ + CHR$(34) + " -m -o -u2 -udfver102 -bootdata:2#p0,e,b" + CHR$(34) + DestinationFolder$_
+Do
+    _Limit 10
+    CurrentTime$ = Date$ + "," + Left$(Time$, 5)
+    Select Case Right$(CurrentTime$, 8)
+        Case "23:59:58", "23:59:59"
+            Midnight = 1
+        Case Else
+            Midnight = 0
+    End Select
+Loop While Midnight = 1
+
+Cmd$ = CHR$(34) + OSCDIMGLocation$ + CHR$(34) + " -t" + CurrentTime$ + " -m -o -u2 -udfver102 -bootdata:2#p0,e,b" + CHR$(34) + DestinationFolder$_
  + "\ISO_Files\boot\etfsboot.com" + CHR$(34) + "#pEF,e,b" + CHR$(34) + DestinationFolder$ + "\ISO_Files\efi\microsoft\boot\efisys.bin"_
  + CHR$(34) + " " + CHR$(34) + DestinationFolder$ + "\ISO_Files" + CHR$(34) + " " + CHR$(34) + FinalImageName$ + CHR$(34) +_
  " >> " + CHR$(34) + DestinationFolder$ + "\logs\OSCDIMG.log" + CHR$(34) + " 2>&1"
@@ -3797,9 +3784,9 @@ Shell _Hide "shutdown /s /t 5 /f"
 GoTo EndProgram
 
 
-' **************************************************************************************************
-' * Make or update a bootable drive from one or more Windows ISO images and Windows PE / RE images *
-' **************************************************************************************************
+' ************************************************************
+' * Make or update a bootable drive from a Windows ISO image *
+' ************************************************************
 
 MakeBootDisk:
 
@@ -3814,51 +3801,6 @@ MakeBootDisk:
 ' the user will be allowed to pick the filesystem to use.
 
 UserCanPickFS$ = "FALSE" ' Set this to "FALSE" to always use NTFS. See the note above about this.
-
-Boot_ModeSelect:
-
-Do
-    Cls
-    Print "Do you want to create a Single bootable partition or Multple boot partitions?"
-    Print
-    Print "If you are not yet familiar with this option, enter HELP below for important things to know about this option."
-    Print
-    Input "Single, Multiple, or HELP: "; Temp$
-    Temp$ = UCase$(Temp$)
-    Select Case Temp$
-
-        Case "S", "M", "H", "SINGLE", "MULTIPLE", "HELP"
-            Temp$ = Left$(Temp$, 1)
-            Exit Do
-    End Select
-Loop
-
-If Temp$ = "H" Then
-    Cls
-    Print "If you wish to take a single Window ISO image and make bootable media from it, choose the Single option. Note that"
-    Print "this option will still give you the ability to create up to two additional partitions that you can use for storing"
-    Print "other data. This mode is highly compatible with x86, x64, BIOS, and UEFI based systems. This method uses an MBR"
-    Print "(Master Boot Record) disk configuration whereas the other method uses a GPT (GUID Partition Table) configuration."
-    Print
-    Print "The Multiple option will sacrifice x86 and BIOS compatibility but offers you the ability to do the following:"
-    Print
-    Print "1) You can boot multiple different items. For example, you could boot your Window 10 media, Windows 11 media, Macrium"
-    Print "   reflect recovery media, and more all from the same flash drive, SSD, HDD, etc."
-    Print
-    Print "2) You will leave behind the 2TB disk limitation. You can use a disk of any size."
-    Print
-    Print "3) Rather than a 4 partition limit, this program will support up to 15 partitions"
-    Print
-    Print "This option is intended only for use with x64 UEFI based systems."
-    Pause
-    GoTo Boot_ModeSelect
-End If
-
-If Temp$ = "S" Then GoTo Boot_SingleMode
-If Temp$ = "M" Then GoTo Boot_MultipleMode
-
-Boot_SingleMode:
-
 AddPart$ = ""
 TotalPartitions = 0
 AdditionalPartitions = 0
@@ -4487,11 +4429,21 @@ Removable:
 
 ' Write the commands to initialize the disk to the file named "TEMP.BAT"
 
+' NOTE: There is a problem where performing a "clean" in diskpart will sometimes fail the first time.
+' It usually works the second time but in testing with batch files we have seen failures even on the
+' second time. The failures only seem to happen on MBR disks. As a result, we are performing a clean
+' operation twice, attempting to set it to GPT each time. Finally, after a third clean we set it to
+' the final desired state of either GPT or MBR.
+
 Cls
 Print "Initializing disk..."
 Open "TEMP.BAT" For Output As #1
 Print #1, "@echo off"
 Print #1, "(echo select disk"; DiskID
+Print #1, "echo clean"
+Print #1, "echo convert gpt"
+Print #1, "echo clean"
+Print #1, "echo convert gpt"
 Print #1, "echo clean"
 
 If Override$ = "Y" Then
@@ -4927,797 +4879,6 @@ Pause
 
 ChDir ProgramStartDir$: GoTo BeginProgram
 
-' The portion of the routine for creating multiple bootable partitions for UEFI based systems begins here.
-
-Boot_MultipleMode:
-
-TotalPartitions = 0
-OS_Partitions = 0
-PE_Partitions = 0
-Other_Partitions = 0
-
-' IMPORTANT: There are two variables you need to have a clear understanding of. Below, I ask for the number of operating systems the user wants to add.
-' I put that in OS_Partitions and then double that value because each OS requires 2 partitions. There are places in the code where I do calculations
-' that may look a little odd to go back to actual number of operating systems but based upon the number of OS partitions. This got confusing so I've
-' added another variable now called OS_Count that simply holds the number of operating systems. We may eventually go back and clean this up.
-
-Cls
-Input "How many Operating Systems (Windows 10 or Windows 11) would you like to add"; OS_Count
-
-If OS_Count > 0 Then
-    OS_Partitions = OS_Count * 2
-Else
-    OS_Partitions = 0
-End If
-
-TotalPartitions = OS_Partitions
-
-If TotalPartitions > 10 Then
-    Cls
-    Print "Each operating system creates 2 partitions on the boot media. Currently this program will only accomodate a"
-    Print "maximum of 10 total partitions."
-    Pause
-    GoTo Boot_MultipleMode
-End If
-
-Cls
-Print "How many Windows PE / RE based programs would you like to add? These are programs such as the Macrium Reflect"
-Print "recovery disk or the Acronis TrueImage recovery disk, etc."
-Print
-Input "How many Windows PE / RE based programs would you like to add"; PE_Partitions
-TotalPartitions = TotalPartitions + PE_Partitions
-
-If TotalPartitions > 10 Then
-    Cls
-    Print "Each operating system creates 2 partitions on the boot media. Each of your Windows PE / RE programs will occupy"
-    Print " one additional partition. Currently this program will only accomodate a maximum of 10 partitions."
-    Pause
-    GoTo Boot_MultipleMode
-End If
-
-Cls
-Input "How many general purpose partitions would you like to add"; Other_Partitions
-TotalPartitions = TotalPartitions + Other_Partitions
-
-If TotalPartitions > 10 Then
-    Cls
-    Print "Each operating system creates 2 partitions on the boot media. Each of your Windows PE / RE programs will occupy"
-    Print " one additional partition as will the general purpose partitions. Currently this program will only accomodate a"
-    Print "maximum of 10 partitions."
-    Pause
-    GoTo Boot_MultipleMode
-End If
-
-ReDim _Preserve SourcePath_Multi$(TotalPartitions)
-ReDim _Preserve PartitionDescription(TotalPartitions)
-ReDim _Preserve ParSize(TotalPartitions)
-ReDim _Preserve ParType$(TotalPartitions)
-PartitionCounter = 0
-
-If OS_Partitions > 0 Then
-    For x = 1 To (OS_Partitions) Step 2
-        PartitionCounter = PartitionCounter + 1
-
-        Redo_OS_Partitions:
-        Do
-            Cls
-            Print "Please enter a friendly name for Operating System #"; Int((x + 1) / 2)
-            Print
-            Input "Friendly Name: ", PartitionDescription$(x)
-        Loop While PartitionDescription$(x) = ""
-
-        If Len(PartitionDescription$(x)) > 45 Then
-            Print
-            Print "Please enter a description of 45 characters or less."
-            Pause
-            GoTo Redo_OS_Partitions
-        End If
-
-        PartitionDescription$(x + 1) = PartitionDescription$(x)
-
-        Redo_OS_Path:
-
-        Cls
-        Print "Please enter the full path and file name of the ISO image for ";: Color 0, 10: Print PartitionDescription$(x);: Color 15: Input ": ", SourcePath_Multi$(x)
-
-        If Not _FileExists(SourcePath_Multi$(x)) Then
-            Cls
-            Print "No such file exists. Please enter a valid path with file name."
-            Pause
-            GoTo Redo_OS_Path
-        End If
-
-        SourcePath_Multi$(x + 1) = SourcePath_Multi$(x)
-
-        Do
-            Cls
-            Print "Since this is an Operating System Installation Media, we need two partitions to support it. The first partition"
-            Print "will be a relativly small partition. I would suggest using a size of 2 GB to start. If you are using a modified"
-            Print "Windows image with updates injected, you may need something larger like 2.5 GB."
-            Print
-            Print "Enter the size of the ";: Color 0, 10: Print "first";: Color 15: Print " partition for ";: Color 0, 10: Print PartitionDescription(x): Color 15
-            Print
-            GoSub Generic_Partition_Size
-            ParSize(x) = Val(ParSizeInMB$)
-            ParType$(x) = "FAT32"
-        Loop While ParSize(x) = 0
-
-        PartitionCounter = PartitionCounter + 1
-        If PartitionCounter = TotalPartitions Then
-            Do
-                Cls
-                Print "This is the second partition for an Operating System boot and is the last partition being created. Since this is"
-                Print "the last partition, we can size it to automatically occupy all remaining space on the drive."
-                Print
-                Input "Do you want to auto size this partition"; AutoSize$
-                YesOrNo AutoSize$
-                AutoSize$ = YN$
-            Loop While AutoSize$ = "X"
-
-            If AutoSize$ = "Y" Then
-                ParSize(x + 1) = 0
-                ParType$(x + 1) = "NTFS"
-                _Continue
-            End If
-        End If
-
-        Do
-            Cls
-            Print "This is the second partition for an Operating System."
-            Print
-            Print "This partition will hold the bulk of the image so it suggested to make it at least as large as your ISO image."
-            Print "file. If you think that you may want to manually update this partition with a larger image in the future, then"
-            Print "making this partition larger to leave space to grow."
-            Print
-            Print "Enter the size of the ";: Color 0, 10: Print "second";: Color 15: Print " partition for ";: Color 0, 10: Print PartitionDescription$(x + 1): Color 15
-            Print
-            GoSub Generic_Partition_Size
-            ParSize(x + 1) = Val(ParSizeInMB$)
-            ParType$(x + 1) = "NTFS"
-        Loop While ParSize(x + 1) = 0
-
-    Next x
-End If
-
-' Get PE/RE media details
-
-' If User added any Windows operating systems, then we need to know how many partitions were used by those so that we
-' we add WinPE media afterward. We will store that number of partitions as an "Offset".
-
-Offset = 0 ' Set an intial value
-If OS_Partitions > 0 Then Offset = OS_Partitions
-
-If PE_Partitions > 0 Then
-    For x = 1 To (PE_Partitions)
-        PartitionCounter = PartitionCounter + 1
-
-        Redo_PE_Partitions:
-
-        Do
-            Cls
-            Print "Please enter a friendly name for Windows PE / RE based media number"; x
-            Print
-            Input "Friendly Name: ", PartitionDescription$(x + Offset)
-        Loop While PartitionDescription$(x + Offset) = ""
-
-        If Len(PartitionDescription$(x + Offset)) > 45 Then
-            Print
-            Print "Please enter a description of 45 characters or less."
-            Pause
-            GoTo Redo_PE_Partitions
-        End If
-
-        Redo_PE_Path:
-
-        Cls
-        Print "Please enter the full path and file name of the ISO image for ";: Color 0, 10: Print PartitionDescription$(x + Offset);: Color 15: Input ": ", SourcePath_Multi$(x + Offset)
-        If Not _FileExists(SourcePath_Multi$(x + Offset)) Then
-            Cls
-            Print "No such file exists. Please enter a valid path with file name."
-            Pause
-            GoTo Redo_PE_Path
-        End If
-
-        If PartitionCounter = TotalPartitions Then
-            Do
-                Cls
-                Print "The partition being created for ";: Color 0, 10: Print PartitionDescription(x + Offset);: Color 15: Print " is the last partition in your project."
-                Print "Since this is the last partition, we can size it to automatically occupy all remaining space on the drive."
-                Print
-                Input "Do you want to auto size this partition"; AutoSize$
-                YesOrNo AutoSize$
-                AutoSize$ = YN$
-            Loop While AutoSize$ = "X"
-
-            If AutoSize$ = "Y" Then
-                ParSize(x + Offset) = 0
-                ParType$(x + Offset) = "FAT32"
-                _Continue
-            End If
-        End If
-
-        Do
-            Cls
-            Print "Enter the size of the partition for ";: Color 0, 10: Print PartitionDescription(x + Offset): Color 15
-            Print
-            GoSub Generic_Partition_Size
-            ParSize(x + Offset) = Val(ParSizeInMB$)
-            ParType$(x + Offset) = "FAT32"
-        Loop While ParSize(x + Offset) = 0
-
-    Next x
-End If
-
-' Update the partition offset. The whole idea of this process is to make bootable media, so there should be either previous Operating System or WinPE
-' based partitions or both specified already. However, we'll verify that now and create the proper offset.
-
-Offset = Offset + PE_Partitions
-If Offset = 0 Then
-    Cls
-    Print "You created no Operating system partitions and no WinPE based media partitions. This program can still create other"
-    Print "partitions for you and BitLocker encrypt them for you."
-    Pause
-End If
-
-If Other_Partitions > 0 Then
-    For x = 1 To (Other_Partitions)
-        PartitionCounter = PartitionCounter + 1
-
-        Redo_Other_Partitions:
-
-        Do
-            Cls
-            Print "Please enter a friendly name for the general purpose partition number"; x
-            Print
-            Input "Friendly Name: ", PartitionDescription$(x + Offset)
-        Loop While PartitionDescription$(x + Offset) = ""
-
-        If Len(PartitionDescription$(x + Offset)) > 45 Then
-            Print
-            Print "Please enter a description of 45 characters or less."
-            Pause
-            GoTo Redo_Other_Partitions
-        End If
-
-        If PartitionCounter = TotalPartitions Then
-            Do
-                Cls
-                Print "The partition being created for ";: Color 0, 10: Print PartitionDescription(x + Offset);: Color 15: Print " is the last partition in your project."
-                Print "Since this is the last partition, we can size it to automatically occupy all remaining space on the drive."
-                Print
-                Input "Do you want to auto size this partition"; AutoSize$
-                YesOrNo AutoSize$
-                AutoSize$ = YN$
-            Loop While AutoSize$ = "X"
-
-            If AutoSize$ = "Y" Then
-                ParSize(x + Offset) = 0
-                ParType$(x + Offset) = "NTFS"
-                _Continue
-            End If
-        End If
-
-        Do
-            Cls
-            Print "Enter the size of the partition for ";: Color 0, 10: Print PartitionDescription(x + Offset): Color 15
-            Print
-            GoSub Generic_Partition_Size
-            ParSize(x + Offset) = Val(ParSizeInMB$)
-            ParType$(x + Offset) = "NTFS"
-        Loop While ParSize(x + Offset) = 0
-    Next x
-End If
-
-If TotalPartitions = 0 Then
-    Cls
-    Print "You specified zero partitions. We will now return you to the main menu so that you can ponder what you have done."
-    Pause
-    ChDir ProgramStartDir$: GoTo BeginProgram
-End If
-
-Do
-    Cls
-    Print "Here is a summary of what we have so far:"
-    Print
-    Print "                  ";: Color 0, 10: Print "Description";: Color 15: Print "                                 ";: Color 0, 10: Print "Partition Size (in MB)";
-    Color 15: Print "   ";: Color 0, 10: Print "Partition Type": Color 15
-    Print
-
-    If OS_Partitions > 0 Then
-        For x = 1 To (Int(OS_Partitions / 2))
-            Print PartitionDescription$((x * 2) - 1); " boot partition";: Locate CsrLin, 70: Print ParSize((x * 2) - 1);: Locate CsrLin, 92: Print "FAT32"
-            Print PartitionDescription$(x * 2); " setup partition";: Locate CsrLin, 70: Print ParSize(x * 2);: Locate CsrLin, 92: Print "NTFS"
-        Next x
-    End If
-
-    If PE_Partitions > 0 Then
-        For x = 1 To PE_Partitions
-            Print PartitionDescription$(OS_Partitions + x); " boot partition";: Locate CsrLin, 70: Print ParSize(OS_Partitions + x);: Locate CsrLin, 92: Print "FAT32"
-        Next x
-    End If
-
-    If Other_Partitions > 0 Then
-        For x = 1 To Other_Partitions
-            Print PartitionDescription$(OS_Partitions + PE_Partitions + x); " NTFS partition";: Locate CsrLin, 70
-            Print ParSize(OS_Partitions + PE_Partitions + x);: Locate CsrLin, 92: Print "NTFS"
-        Next x
-    End If
-
-    Print
-    Print "If the last partition shows a size of 0, this indicates that the partition is set to occupy all remaining space."
-    Print
-    Input "Is the above information correct"; Temp$
-    YesOrNo Temp$
-Loop While YN$ = "X"
-Temp$ = YN$
-
-If Temp$ = "N" Then
-    Cls
-    Print "Please organize your information and run this routine again."
-    Pause
-    ChDir ProgramStartDir$: GoTo BeginProgram
-End If
-
-' Present a list of disks to the user so that they can select the disk to be used for this project.
-
-GoSub SelectDisk
-
-' Verify that the disk selected has enough space to hold all the partitions requested by the user.
-
-' Verify that the amount of space available is greater than what is specified by the user
-
-Cls
-Print "Perform initial preparation of the selected drive..."
-DiskIDSearchString$ = "Disk" + Str$(DiskID) + " "
-ff = FreeFile
-Open "TEMP.BAT" For Output As #ff
-Print #ff, "@echo off"
-Print #ff, "(echo list disk"
-Print #ff, "echo exit"
-Print #ff, ") | diskpart > diskpart.txt"
-Close #ff
-Shell "TEMP.BAT"
-If _FileExists("TEMP.BAT") Then Kill "TEMP.BAT"
-ff = FreeFile
-Open "diskpart.txt" For Input As #ff
-
-' Init variables
-
-AvailableSpaceString$ = ""
-Units$ = ""
-AvailableSpace = 0
-
-Do
-    Line Input #ff, ReadLine$
-
-    If InStr(ReadLine$, DiskIDSearchString$) Then
-        AvailableSpaceString$ = Mid$(ReadLine$, 28, 4)
-        Units$ = Mid$(ReadLine$, 33, 2)
-        Exit Do
-    End If
-
-Loop Until EOF(ff)
-
-Close #ff
-
-If _FileExists("diskpart.txt") Then Kill "diskpart.txt"
-If Units$ = "MB" Then Multiplier = 1
-If Units$ = "GB" Then Multiplier = 1024
-If Units$ = "TB" Then Multiplier = 1048576
-AvailableSpace = ((Val(AvailableSpaceString$)) * Multiplier)
-
-TotalSpaceNeeded = 0
-
-For x = 1 To TotalPartitions
-    TotalSpaceNeeded = TotalSpaceNeeded + ParSize(x)
-
-    ' For the last partition, a size of zero indicates that all remaining space should be used. In the event that we encounter
-    ' a size of zero, we should set aside a minimum of 100MB since that is the minimum partition size we are enforcing
-
-    If ParSize(x) = 0 Then
-        TotalSpaceNeeded = TotalSpaceNeeded + 100
-    End If
-Next x
-
-If TotalSpaceNeeded > AvailableSpace Then
-    Cls
-    Color 14, 4: Print "Warning!";: Color 15: Print " You have have specified partition sizes that total more than the space available on the selected disk."
-    Print
-    Print "Please check the values that you have supplied and the disk that you selected and try again."
-    Pause
-    ChDir ProgramStartDir$: GoTo BeginProgram
-End If
-
-' Perform a simple check to validate that all OS images specified appear to be valid Win x64 images.
-
-If OS_Partitions > 0 Then
-    For x = 1 To OS_Partitions
-        DetermineArchitecture SourcePath_Multi$(x), 1
-        Select Case ImageArchitecture$
-            Case "x86", "DUAL", "NONE"
-                Cls
-                Print
-                Print "The file specified for "; PartitionDescription$(x); " appears to be invalid."
-                Print "The image specified must be a Windows x64 image. This particular routine does not support x86 or dual"
-                Print "architecture images, nor does it support other types of images."
-                Print
-                Print "Please resolve this issue and then run this program again."
-                Pause
-                ChDir ProgramStartDir$: GoTo BeginProgram
-            Case "x64"
-                ' Do nothing - We want the image to be of type x64 so we'll proceed on at this point.
-        End Select
-    Next x
-End If
-
-' Currently, we are not performing any validation on Win PE / RE media. This may be considered for future addition.
-
-' We will now ask the user if they want to manually or automatically select drive letter assignments for the partitions being created.
-' If auto, we'll get those drive letters now.
-
-ff = FreeFile
-Open "temp.bat" For Output As #ff
-Print #ff, "@echo off"
-Print #ff, "(echo select disk"; DiskID
-Print #ff, "echo clean"
-Print #ff, "echo convert gpt"
-Print #ff, "echo exit"
-Print #ff, ") | diskpart > NUL"
-Close #ff
-Shell _Hide "temp.bat"
-If _FileExists("temp.bat") Then Kill "temp.bat"
-
-GoSub SelectAutoOrManual
-
-Do
-    Cls
-    Print "Here is an updated summary along with drive letter assignments:"
-    Print
-    Print "                  ";: Color 0, 10: Print "Description";: Color 15: Print "                                 ";: Color 0, 10: Print "Partition Size (in MB)";: Color 15
-    Print "   ";: Color 0, 10: Print "Partition Type";: Color 15: Print "   ";: Color 0, 10: Print "Drive Letter": Color 15
-    Print
-
-    If OS_Partitions > 0 Then
-        For x = 1 To (Int(OS_Partitions / 2))
-            Print PartitionDescription$((x * 2) - 1); " boot partition";: Locate CsrLin, 70: Print ParSize((x * 2) - 1);
-            Locate CsrLin, 92: Print "FAT32";: Locate CsrLin, 110: Print Letter$((x * 2) - 1); ":"
-            Print PartitionDescription$(x * 2); " setup partition";: Locate CsrLin, 70: Print ParSize(x * 2);
-            Locate CsrLin, 92: Print "NTFS";: Locate CsrLin, 110: Print Letter$(x * 2); ":"
-        Next x
-    End If
-
-    If PE_Partitions > 0 Then
-        For x = 1 To PE_Partitions
-            Print PartitionDescription$(OS_Partitions + x); " boot partition";: Locate CsrLin, 70: Print ParSize(OS_Partitions + x);
-            Locate CsrLin, 92: Print "FAT32";: Locate CsrLin, 110: Print Letter$(OS_Partitions + x); ":"
-        Next x
-    End If
-
-    If Other_Partitions > 0 Then
-        For x = 1 To Other_Partitions
-            Print PartitionDescription$(OS_Partitions + PE_Partitions + x); " NTFS partition";: Locate CsrLin, 70: Print ParSize(OS_Partitions + PE_Partitions + x);
-            Locate CsrLin, 92: Print "NTFS";: Locate CsrLin, 110: Print Letter$(OS_Partitions + PE_Partitions + x); ":"
-        Next x
-    End If
-
-    Print
-    Print "If the last partition shows a size of 0, this indicates that the partition is set to occupy all remaining space."
-    Print
-    Input "Is the above information correct"; Temp$
-    YesOrNo Temp$
-Loop While YN$ = "X"
-Temp$ = YN$
-
-If Temp$ = "N" Then
-    Cls
-    Print "Please organize your information and run this routine again."
-    Pause
-    ChDir ProgramStartDir$: GoTo BeginProgram
-End If
-
-' Ask user if they want to hide drive letters for OS and Win PE / RE partitions.
-
-HideLetters$ = "N" ' Set an initial value
-
-If (OS_Partitions + PE_Partitions) > 0 Then
-    Do
-        Cls
-        Print "You have chosen to create bootable partitions. Normally, you would only need to interact with these when booting"
-        Print "your system from them. If you wish, the program can remove the drive letters from these partitions to keep things"
-        Print "tidy and free up some drive letters. The drive will still be bootable."
-        Print
-        Print "Note that the drive letters will only be hidden on this system. If you take the drive to another system it may"
-        Print "assign letters. Also, you can always unhide these partitions by simply opening Disk Manager and assigning letters."
-        Print
-        Input "Do you want to hide drive letters for operating system and Win PE / RE partitions"; HideLetters$
-        YesOrNo HideLetters$
-        HideLetters$ = YN$
-    Loop While HideLetters$ = "X"
-End If
-
-Cls
-Print "Preparing the selected disk now. Please standby..."
-Print
-ff = FreeFile
-Open "temp.bat" For Output As #ff
-Print #ff, "@echo off"
-Print #ff, "(echo select disk"; DiskID
-
-For x = 1 To TotalPartitions
-
-    ' If the specified partition size is 0, this indicates that we want to allow that partition to occupy all remaining space.
-    ' Handle the sizing of this partition accordingly. Leving off the size= parameter in diskpart will cause all remaining
-    ' space to be used.
-
-    If ParSize(x) = 0 Then
-        Print #ff, "echo create partition primary"
-    Else
-        Print #ff, "echo create partition primary size="; LTrim$(Str$(ParSize(x)))
-    End If
-
-    Print #ff, "echo format fs="; ParType$(x); " quick label=PAR"; LTrim$(Str$(x))
-    Print #ff, "echo assign letter="; Letter$(x)
-Next x
-
-Print #ff, "echo exit"
-Print #ff, ") | diskpart > NUL"
-Close #ff
-
-Shell _Hide "temp.bat"
-
-If _FileExists("temp.bat") Then Kill "temp.bat"
-
-' Process OS partitions
-
-If OS_Count = 0 Then GoTo No_OS_Partitions
-
-PartitionCounter = 1
-For x = 1 To OS_Count
-    Cls
-    Print "Working on OS image"; x; "of"; OS_Count
-    Color 0, 10: Print PartitionDescription(PartitionCounter): Color 15
-    Print
-
-    ' mount the windows image.
-
-    MountISO SourcePath_Multi$(PartitionCounter)
-    CDROM$ = MountedImageDriveLetter$
-
-    ' Copy all files except the \sources folder to the first partition
-    ' make a directory called sources and copy only the boot.wim
-    ' on the first partition, create a folder called \sources. Copy all files from the original \sources EXCEPT boot.wim
-    ' on the second partition, create a folder called \sources. Copy all files from the original \sources EXCEPT boot.wim
-
-    ff = FreeFile
-    Open "TEMP.BAT" For Output As #ff
-    Print #ff, "@echo off"
-    Print #ff, "del WIM_File_Copy_Error.txt > NUL 2>&1"
-    Print #ff, "echo."
-    Print #ff, "echo *************************************************************"
-    Print #ff, "echo * Copying files. Be aware that this can take quite a while, *"
-    Print #ff, "echo * especially on the 2nd partition and with slower media.    *"
-    Print #ff, "echo * Please be patient and allow this process to finish.       *"
-    Print #ff, "echo *************************************************************"
-    Print #ff, "echo."
-    Print #ff, "echo Copying files to partition #"; LTrim$(Str$(PartitionCounter))
-
-    If ExcludeAutounattend$ = "N" Then
-        Print #ff, "robocopy "; CDROM$; "\ "; Letter$(PartitionCounter); ":\ /mir /xd sources /njs /256 > NUL"
-        Print #ff, "if %ERRORLEVEL% gtr 3 goto HandleError"
-    Else
-        Print #ff, "robocopy "; CDROM$; "\ "; Letter$(PartitionCounter); ":\ /mir /xf autounattend.xml /xd sources /njs /256 > NUL"
-        Print #ff, "if %ERRORLEVEL% gtr 3 goto HandleError"
-    End If
-
-    Print #ff, "robocopy "; CDROM$; "\sources "; Letter$(PartitionCounter); ":\sources boot.wim /njh /njs /256 > NUL"
-    Print #ff, "if %ERRORLEVEL% gtr 3 goto HandleError"
-    Print #ff, "echo Copying files to partition #"; LTrim$(Str$(PartitionCounter + 1))
-    Print #ff, "robocopy "; CDROM$; "\sources "; Letter$(PartitionCounter + 1); ":\sources /mir /njh /njs /xf boot.wim /256 > NUL"
-    Print #ff, "if %ERRORLEVEL% gtr 3 goto HandleError"
-    Print #ff, "goto cleanup"
-    Print #ff, ":HandleError"
-    Print #ff, "echo An error ocurred > WIM_File_Copy_Error.txt"
-    Print #ff, ":cleanup"
-    Print #ff, "powershell.exe -command "; Chr$(34); "Dismount-DiskImage "; Chr$(34); "'"; SourcePath_Multi$(PartitionCounter); "'"; Chr$(34); Chr$(34) + " > NUL"
-    Close #ff
-    Shell "TEMP.BAT"
-    If _FileExists("TEMP.BAT") Then Kill "TEMP.BAT"
-
-    ' Check for the existance of a file named "WIM_File_Copy_Error.txt". If such a file exists, it indicates that
-    ' that there was an error copying files with the above batch file. In that case, take the following actions:
-    '
-    ' 1) Display a warning to the user.
-    ' 2) Delete the "WIM_File_Copy_Error.txt" file.
-    ' 3) Abort this routine and return to the start of the program.
-
-    If _FileExists("WIM_File_Copy_Error.txt") Then
-        Cls
-        Print
-        Color 14, 4: Print "WARNING!";: Color 15: Print " There was an error copying files. This usually indicates that there was not enough space on the"
-        Print "destination. Please correct this situation and run this routine again."
-        Pause
-        ChDir ProgramStartDir$: GoTo BeginProgram
-    End If
-
-    ' Making the file ei.cfg on the partition 2, in the sources folder if the user wanted this file added.
-    ' If an ei.cfg already exists, leave it alone.
-
-    If CreateEiCfg$ = "Y" Then
-        Temp$ = Letter$(PartitionCounter + 1) + ":\sources\ei.cfg"
-
-        If Not (_FileExists(Temp$)) Then
-            ff = FreeFile
-            Open (Temp$) For Output As #ff
-            Print #ff, "[CHANNEL]"
-            Print #ff, "Retail"
-            Close #ff
-        End If
-
-    End If
-
-    PartitionCounter = PartitionCounter + 2
-
-Next x
-
-No_OS_Partitions:
-
-' Process any Win PE/RE Images
-
-PartitionCounter = OS_Partitions + 1
-
-If PE_Partitions = 0 Then GoTo No_PE_Partitions
-
-For x = 1 To PE_Partitions
-    Cls
-    Print "Working on PE/RE image"; x; "of"; PE_Partitions
-    Color 0, 10: Print PartitionDescription(PartitionCounter): Color 15
-    Print
-
-    ' mount the windows image.
-
-    MountISO SourcePath_Multi$(PartitionCounter)
-    CDROM$ = MountedImageDriveLetter$
-
-    ' Copy ALL files from source to destination
-
-    ff = FreeFile
-    Open "TEMP.BAT" For Output As #ff
-    Print #ff, "@echo off"
-    Print #ff, "del WIM_File_Copy_Error.txt > NUL 2>&1"
-    Print #ff, "echo."
-    Print #ff, "echo ************************************************"
-    Print #ff, "echo * Copying files. This may take a little while. *"
-    Print #ff, "echo ************************************************"
-    Print #ff, "echo."
-    Print #ff, "echo Copying files to partition #"; LTrim$(Str$(PartitionCounter))
-    Print #ff, "robocopy "; CDROM$; "\ "; Letter$(PartitionCounter); ":\ /mir /njs /256 > NUL"
-    Print #ff, "if %ERRORLEVEL% gtr 3 goto HandleError"
-    Print #ff, "goto cleanup"
-    Print #ff, ":HandleError"
-    Print #ff, "echo An error ocurred > WIM_File_Copy_Error.txt"
-    Print #ff, ":cleanup"
-    Print #ff, "powershell.exe -command "; Chr$(34); "Dismount-DiskImage "; Chr$(34); "'"; SourcePath_Multi$(PartitionCounter); "'"; Chr$(34); Chr$(34) + " > NUL"
-    Close #ff
-
-    Shell "TEMP.BAT"
-    If _FileExists("TEMP.BAT") Then Kill "TEMP.BAT"
-
-    ' Check for the existance of a file named "WIM_File_Copy_Error.txt". If such a file exists, it indicates that
-    ' that there was an error copying files with the above batch file. In that case, take the following actions:
-    '
-    ' 1) Display a warning to the user.
-    ' 2) Delete the "WIM_File_Copy_Error.txt" file.
-    ' 3) Abort this routine and return to the start of the program.
-
-    If _FileExists("WIM_File_Copy_Error.txt") Then
-        Cls
-        Print
-        Color 14, 4: Print "WARNING!";: Color 15: Print " There was an error copying files. This usually indicates that there was not enough space on the"
-        Print "destination. Please correct this situation and run this routine again."
-        Pause
-        ChDir ProgramStartDir$: GoTo BeginProgram
-    End If
-
-    PartitionCounter = PartitionCounter + 1
-
-Next x
-
-No_PE_Partitions:
-
-' No actions are needed for the generic partitions as they were already created previously
-' and no data needs to be copied to these partitions.
-
-If HideLetters$ = "N" Then GoTo DoneHidingLetters
-
-For x = 1 To (OS_Partitions + PE_Partitions)
-    Shell "mountvol " + Letter$(x) + ": /D"
-Next x
-
-DoneHidingLetters:
-
-' At this time, all operations are completed and we return to the main menu.
-
-Cls
-Print "Operations completed. Please be aware that when you boot from this media, the UEFI menu will not display friendly names"
-Print "for each boot entry. The names shown will be based upon the hardware device. The sample below shows an example of what"
-Print "this might look like. It will vary from system to system. Note that in this example, the three lines that show "; Chr$(34); "USB"
-Print "Hard Drive(UEFI) - SanDisk Extreme Pro 0"; Chr$(34); " are our bootable partitions."
-Print
-Print "    OS Boot Manager (UEFI) - Windows Boot Manager (Seagate Firecuda 510 SSD ZP1000GM30001)"
-Print "    USB Hard Drive(UEFI) - SanDisk Extreme Pro 0"
-Print "    USB Hard Drive(UEFI) - SanDisk Extreme Pro 0"
-Print "    USB Hard Drive(UEFI) - SanDisk Extreme Pro 0"
-Print "    Boot From EFI File"
-Print
-Print "Note that on some systems you will see one item for each bootable FAT32 partition created on your disk, while some"
-Print "system will display an entry for each FAT32 <AND> NTFS partition. You will need to keep track of these and select the"
-Print "FAT32 partitions to boot from."
-Print
-Pause
-Cls
-Print "Here is a summary of how we configured your disk:"
-Print
-Print "                  ";: Color 0, 10: Print "Description";: Color 15: Print "                                 ";: Color 0, 10: Print "Partition Size (in MB)";: Color 15
-Print "   ";: Color 0, 10: Print "Partition Type";: Color 15: Print "   ";: Color 0, 10: Print "Drive Letter": Color 15
-Print
-
-If OS_Partitions > 0 Then
-    For x = 1 To (Int(OS_Partitions / 2))
-        Print PartitionDescription$((x * 2) - 1); " boot partition";
-        Locate CsrLin, 70: Print ParSize((x * 2) - 1);
-        Locate CsrLin, 92: Print "FAT32";
-
-        If HideLetters$ = "Y" Then
-            Locate CsrLin, 109: Print "NONE"
-        Else
-            Locate CsrLin, 110: Print Letter$((x * 2) - 1); ":"
-        End If
-
-        Print PartitionDescription$(x * 2); " setup partition";
-        Locate CsrLin, 70: Print ParSize(x * 2);
-        Locate CsrLin, 92: Print "NTFS";
-
-        If HideLetters$ = "Y" Then
-            Locate CsrLin, 109: Print "NONE"
-        Else
-            Locate CsrLin, 110: Print Letter$(x * 2); ":"
-        End If
-
-    Next x
-End If
-
-If PE_Partitions > 0 Then
-    For x = 1 To PE_Partitions
-        Print PartitionDescription$(OS_Partitions + x); " boot partition";
-        Locate CsrLin, 70: Print ParSize(OS_Partitions + x);
-        Locate CsrLin, 92: Print "FAT32";
-
-        If HideLetters$ = "Y" Then
-            Locate CsrLin, 109: Print "NONE"
-        Else
-            Locate CsrLin, 110: Print Letter$(OS_Partitions + x); ":"
-        End If
-
-    Next x
-End If
-
-If Other_Partitions > 0 Then
-    For x = 1 To Other_Partitions
-        Print PartitionDescription$(OS_Partitions + PE_Partitions + x); " NTFS partition";
-        Locate CsrLin, 70: Print ParSize(OS_Partitions + PE_Partitions + x);
-        Locate CsrLin, 92: Print "NTFS";: Locate CsrLin, 110: Print Letter$(OS_Partitions + PE_Partitions + x); ":"
-    Next x
-End If
-
-Print
-Print "If the last partition shows a size of 0, this indicates that the partition is set to occupy all remaining space."
-Print
-Print "Note that only those partitions described as a boot partition will be displayed on the UEFI boot menu."
-Pause
-
-ChDir ProgramStartDir$: GoTo BeginProgram
-
-' End of mainroutine
 
 ' Subroutine - Shows patition information.
 
@@ -6175,7 +5336,7 @@ If UpdateAll$ = "Y" Then
             Case "NONE"
                 Cls
                 Color 14, 4: Print "WARNING!";: Color 15: Print " An invalid file has been selected."
-                Print "Check the following file to make sure that it is valid. It needs to contain INSTALL.WIM file(s), not INSTALL.ESD."
+                Print "Check the following file to make sure that it is valid. It needs to contain install.wim file(s), not INSTALL.ESD."
                 Print
                 Print "Path: ";: Color 10: Print Left$(Temp$, ((_InStrRev(Temp$, "\"))) - 1): Color 15
                 Print "File: ";: Color 10: Print Right$(Temp$, (Len(Temp$) - (_InStrRev(Temp$, "\")))): Color 15
@@ -6250,7 +5411,7 @@ For x = 1 To FileCount
                 Case "NONE"
                     Cls
                     Color 14, 4: Print "WARNING!";: Color 15: Print " An invalid file has been selected."
-                    Print "Check the following file to make sure that it is valid. It needs to contain INSTALL.WIM file(s), not INSTALL.ESD."
+                    Print "Check the following file to make sure that it is valid. It needs to contain install.wim file(s), not INSTALL.ESD."
                     Print
                     Print "Path: ";: Color 10: Print Left$(Temp$, ((_InStrRev(Temp$, "\"))) - 1): Color 15
                     Print "File: ";: Color 10: Print Right$(Temp$, (Len(Temp$) - (_InStrRev(Temp$, "\")))): Color 15
@@ -6999,7 +6160,18 @@ Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
 ' Create the final ISO image file
 
-Cmd$ = CHR$(34) + OSCDIMGLocation$ + CHR$(34) + " -m -o -u2 -udfver102 -bootdata:2#p0,e,b" + CHR$(34) + DestinationFolder$ + "\ISO_Files\boot\etfsboot.com"_
+Do
+    _Limit 10
+    CurrentTime$ = Date$ + "," + Left$(Time$, 5)
+    Select Case Right$(CurrentTime$, 8)
+        Case "23:59:58", "23:59:59"
+            Midnight = 1
+        Case Else
+            Midnight = 0
+    End Select
+Loop While Midnight = 1
+
+Cmd$ = CHR$(34) + OSCDIMGLocation$ + CHR$(34) + " -t" + CurrentTime$ + " -m -o -u2 -udfver102 -bootdata:2#p0,e,b" + CHR$(34) + DestinationFolder$ + "\ISO_Files\boot\etfsboot.com"_
 + CHR$(34) + "#pEF,e,b" + CHR$(34) + DestinationFolder$ + "\ISO_Files\efi\microsoft\boot\efisys.bin" + CHR$(34) + " " + CHR$(34) + DestinationFolder$_
 + "\ISO_Files" + CHR$(34) + " " + CHR$(34) + FinalImageName$ + CHR$(34) + " > NUL 2>&1"
 Shell Chr$(34) + Cmd$ + Chr$(34)
@@ -7075,7 +6247,7 @@ TempPath$ = MakeBootablePath$ + "\sources\install.wim"
 
 If Not ((_FileExists(TempPath$)) Or (_FileExists(MakeBootablePath$ + "\x64\sources\install.wim")) Or (_FileExists(MakeBootablePath$ + "\x86\sources\install.wim"))) Then
     Print
-    Color 14, 4: Print "That path is not valid.";: Color 15: Print " No INSTALL.WIM file found at that location. Please try again."
+    Color 14, 4: Print "That path is not valid.";: Color 15: Print " No install.wim file found at that location. Please try again."
     Pause
     GoTo MakeBootDisk2
 End If
@@ -7156,7 +6328,18 @@ Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
 ' Create the ISO image
 
-Cmd$ = CHR$(34) + OSCDIMGLocation$ + CHR$(34) + " -m -o -u2 -udfver102 -l" + CHR$(34) + VolumeName$ + CHR$(34) + " -bootdata:2#p0,e,b" + CHR$(34)_
+Do
+    _Limit 10
+    CurrentTime$ = Date$ + "," + Left$(Time$, 5)
+    Select Case Right$(CurrentTime$, 8)
+        Case "23:59:58", "23:59:59"
+            Midnight = 1
+        Case Else
+            Midnight = 0
+    End Select
+Loop While Midnight = 1
+
+Cmd$ = CHR$(34) + OSCDIMGLocation$ + CHR$(34) + " -t" + CurrentTime$ + " -m -o -u2 -udfver102 -l" + CHR$(34) + VolumeName$ + CHR$(34) + " -bootdata:2#p0,e,b" + CHR$(34)_
 + MakeBootablePath$ + "\boot\etfsboot.com" + CHR$(34) + "#pEF,e,b" + CHR$(34) + MakeBootablePath$ + "\efi\microsoft\boot\efisys.bin" + CHR$(34)_
 + " " + CHR$(34) + MakeBootablePath$ + CHR$(34) + " " + CHR$(34) + DestinationFolder$ + "\" + DestinationFileName$ + ".iso" + CHR$(34) + " > NUL 2>&1"
 Print "Creating the ISO image. Please standby..."
@@ -7632,7 +6815,19 @@ Shell _Hide Cmd$
 ' Create the final ISO image
 
 Print "Creating the final ISO image. Please standby..."
-Cmd$ = CHR$(34) + OSCDIMGLocation$ + CHR$(34) + " -m -o -u2 -udfver102 -l" + CHR$(34) + VolumeLabel$ + CHR$(34) + " -bootdata:2#p0,e,b" + CHR$(34)_
+
+Do
+    _Limit 10
+    CurrentTime$ = Date$ + "," + Left$(Time$, 5)
+    Select Case Right$(CurrentTime$, 8)
+        Case "23:59:58", "23:59:59"
+            Midnight = 1
+        Case Else
+            Midnight = 0
+    End Select
+Loop While Midnight = 1
+
+Cmd$ = CHR$(34) + OSCDIMGLocation$ + CHR$(34) + " -t" + CurrentTime$ + " -m -o -u2 -udfver102 -l" + CHR$(34) + VolumeLabel$ + CHR$(34) + " -bootdata:2#p0,e,b" + CHR$(34)_
 + Destination$ + "\ISO_Files\boot\etfsboot.com" + CHR$(34) + "#pEF,e,b" + CHR$(34) + Destination$ + "\ISO_Files\efi\microsoft\boot\efisys.bin"_
 + CHR$(34) + " " + CHR$(34) + Destination$ + "\ISO_Files" + CHR$(34) + " " + CHR$(34) + Destination$ + "\" + ReorgFileName$ + CHR$(34) + " > NUL 2>&1"
 Shell Chr$(34) + Cmd$ + Chr$(34)
@@ -7669,9 +6864,9 @@ Pause
 ChDir ProgramStartDir$: GoTo BeginProgram
 
 
-' ******************************************************************
-' * Get WIM info - display basic info for each WIM in an ISO image *
-' ******************************************************************
+' ***************************************************************************************************
+' * Get WIM info - display basic info for each WIM in an ISO image and display Windows build number *
+' ***************************************************************************************************
 
 GetWimInfo:
 
@@ -7933,7 +7128,19 @@ Print "********************************"
 Print "* Creating the final ISO image *"
 Print "********************************"
 Print
-Cmd$ = CHR$(34) + OSCDIMGLocation$ + CHR$(34) + " -m -o -u2 -udfver102 -l" + CHR$(34) + VolumeName$ + CHR$(34) + " -bootdata:2#p0,e,b" + CHR$(34)_
+
+Do
+    _Limit 10
+    CurrentTime$ = Date$ + "," + Left$(Time$, 5)
+    Select Case Right$(CurrentTime$, 8)
+        Case "23:59:58", "23:59:59"
+            Midnight = 1
+        Case Else
+            Midnight = 0
+    End Select
+Loop While Midnight = 1
+
+Cmd$ = CHR$(34) + OSCDIMGLocation$ + CHR$(34) + " -t" + CurrentTime$ + " -m -o -u2 -udfver102 -l" + CHR$(34) + VolumeName$ + CHR$(34) + " -bootdata:2#p0,e,b" + CHR$(34)_
 + DestinationFolder$ + "ISO_Files\boot\etfsboot.com" + CHR$(34) + "#pEF,e,b" + CHR$(34) + DestinationFolder$ + "ISO_Files\efi\microsoft\boot\efisys.bin"_
 + CHR$(34) + " " + CHR$(34) + DestinationFolder$ + "ISO_Files" + CHR$(34) + " " + CHR$(34) + DestinationFolder$ + OutputFileName$ + ".ISO" + CHR$(34) + " > NUL 2>&1"
 Shell Chr$(34) + Cmd$ + Chr$(34)
@@ -8716,7 +7923,18 @@ End If
 
 ' Build the command that needs to be run to create the ISO image.
 
-Cmd$ = CHR$(34) + OSCDIMGLocation$ + CHR$(34) + " " + "-o -m -h -k -u2 -udfver102 -l" + CHR$(34) + VolumeName$ + CHR$(34) + " " + CHR$(34) + SourcePath$_
+Do
+    _Limit 10
+    CurrentTime$ = Date$ + "," + Left$(Time$, 5)
+    Select Case Right$(CurrentTime$, 8)
+        Case "23:59:58", "23:59:59"
+            Midnight = 1
+        Case Else
+            Midnight = 0
+    End Select
+Loop While Midnight = 1
+
+Cmd$ = CHR$(34) + OSCDIMGLocation$ + CHR$(34) + " -t" + CurrentTime$ + " -o -m -h -k -u2 -udfver102 -l" + CHR$(34) + VolumeName$ + CHR$(34) + " " + CHR$(34) + SourcePath$_
 + CHR$(34) + " " + CHR$(34) + DestinationPathAndFile$ + CHR$(34) + " > NUL 2>&1"
 
 ' Create the ISO image
@@ -8800,12 +8018,12 @@ Print "    2) Inject Windows updates into one or more Windows editions and creat
 Print "    3) Inject drivers into one or more Windows editions and create a multi edition bootable image               "
 Print "    4) Inject boot-critical drivers into one or more Windows editions and create a multi edition bootable image "
 Color 0, 10
-Print "    5) Make or update a bootable drive from one or more Windows ISO images and Windows PE / RE images           "
+Print "    5) Make or update a bootable drive from a Windows ISO image                                                 "
 Print "    6) Create a bootable Windows ISO image that can include multiple editions                                   "
 Print "    7) Create a bootable ISO image from Windows files in a folder                                               "
 Print "    8) Reorganize the contents of a Windows ISO image                                                           "
 Color 0, 3
-Print "    9) Get WIM info - display basic info for each WIM in an ISO image                                           "
+Print "    9) Get WIM info - display basic info for each WIM in an ISO image and display Windows build number          "
 Print "   10) Modify the NAME and DESCRIPTION values for entries in a WIM file                                         "
 Color 0, 6
 Print "   11) Export drivers from this system                                                                          "
@@ -8947,7 +8165,7 @@ Print "System Requirements"
 Print "==================="
 Print
 Print "This program is a 64-bit program designed to work only on 64-bit systems. It is also designed to work with Windows ISO"
-Print "images that contain an INSTALL.WIM file in the \sources folder, not an INSTALL.ESD. There is one exception which is"
+Print "images that contain an install.wim file in the \sources folder, not an INSTALL.ESD. There is one exception which is"
 Print "addressed in the help sections related to those sections where it is applicable."
 Print
 Print "This program requires the Windows ADK to be installed. Only the ";: Color 0, 10: Print "Deployment Tools";: Color 15: Print " component needs to be installed. The"
@@ -8959,7 +8177,7 @@ Print "Run the program locally, not from a network location."
 Print
 Print "When operating on multiple editions of Windows in the same project (for example, Win 10 Pro, Home, Education editions,"
 Print "etc.), this program is designed to work with editions of the same version. For example, you do not want to mix version"
-Print "21H1 and 21H2 in the same project."
+Print "21H1 and 21H2 in the same project. Do NOT create ISO images that have Windows editions having different builds."
 Print
 Print "Disable QuickEdit Mode - The color of text in some places within the program may be displayed incorrectly if QuickEdit"
 Print "mode is enabled. You should disable QuickEdit mode by following these steps: Right-click on the title bar when the"
@@ -9294,7 +8512,7 @@ Cls
 Print "Acceptable Windows Images"
 Print "========================="
 Print
-Print "All Windows ISO images used need to have an INSTALL.WIM (not an INSTALL.ESD). The one exception to this is that the file"
+Print "All Windows ISO images used need to have an install.wim (not an INSTALL.ESD). The one exception to this is that the file"
 Print "used to build the base image for a dual architecture project (one that contains both x64 and x86 images), can have"
 Print "INSTALL.ESD files on it. Please see the help topic Working with Dual Architecture Images for more information."
 Pause
@@ -9526,7 +8744,7 @@ Print
 Print "The routine to inject drivers is very similar to injecting Windows updates, however, in this routine, when specifying"
 Print "the location of the drivers, the program will search all subdirectories for drivers."
 Print
-Print "As with the routine to inject Windows updates, this routine requires Windows ISO images with an INSTALL.WIM and not an"
+Print "As with the routine to inject Windows updates, this routine requires Windows ISO images with an install.wim and not an"
 Print "INSTALL.ESD. Please see the help for the routine that injects Windows updates for a more detailed discussion of"
 Print "acceptable Windows images."
 Pause
@@ -9624,7 +8842,7 @@ Print "details."
 Pause
 GoTo ProgramHelp
 
-' Help Topic: Make or update a bootable drive from one or more Windows ISO images and Windows PE / RE images
+' Help Topic: Make or update a bootable drive from a Windows ISO image
 ' or update an already existing drive
 
 HelpMakeMultiBootImage:
@@ -9639,9 +8857,7 @@ Print " Version "; ProgramVersion$; "                "
 Print " Released "; ProgramReleaseDate$; "             "
 Color 0, 10
 Locate 3, 38
-Print " Program Help - Make a bootable drive from one or more Windows ";
-Locate 4, 38
-Print "                ISO images and Windows PE / RE images          ";
+Print " Program Help - Make a bootable drive from a Windows ISO image ";
 Locate 9, 1
 Color 15
 Print "    1) General information about this routine"
@@ -9672,9 +8888,10 @@ Print "You have made an invalid selection.";
 Color 15
 Print " You need to make a selection by entering a number from 1 to 3."
 Pause
+
 GoTo HelpMakeMultiBootImage
 
-' Help Topic: Make or update a bootable drive from one or more Windows ISO images and Windows PE / RE images
+' Help Topic: Make or update a bootable drive from a Windows ISO image
 ' or update an already existing drive > General information about this routine
 
 MakeBootDriveHelp:
@@ -9682,13 +8899,6 @@ MakeBootDriveHelp:
 Cls
 Print "General Information About This Routine"
 Print "======================================"
-Print
-Print "This routine now has two major options - review the information related to the option that you wish to choose on the"
-Print "pages below."
-Pause
-Cls
-Print "Option 1 - MBR Boot Media"
-Print "========================="
 Print
 Print "This routine will allow you to create bootable media from a bootable Windows ISO image. You will also be given the"
 Print "choice to create additional partitions on that media that can be used to store other data. If you do choose to create"
@@ -9710,32 +8920,10 @@ Print "that other data when you want to update the bootable portion of the disk.
 Print "if media previously created with this routine is found, it will be refreshed automatically without you having to choose"
 Print "what drive to update. If more than one such drive is found, then you will be asked to identify the disk to be updated."
 Pause
-Cls
-Print "Option 2 - GPT Boot Image"
-Print "========================="
-Print
-Print "This mode has some advantages but works only on UEFI / x64 based systems. Media created using this method wil not work"
-Print "on BIOS / x86 based systems. The advantages of this method:"
-Print
-Print "1) Can boot multiple different operating systems or applications."
-Print "2) Allows for disks greater than 2TB in size."
-Print "3) Can support more than 4 primary partitions (we support 15 with this app, limit is actually 128)."
-Print
-Print "You can add multiple Windows images such as Windows 10 and 11 to the same disk. In addition, you can add Windows RE / PE"
-Print "based media such as rescue and recovery disks for Macrium Reflect, etc. When booting from a disk made with procedure,"
-Print "your system will display one instance of the boot device for each bootable partition. Note that this boot entry is based"
-Print "upon the hardware disk device, and not what the contents are, so unfortunately it won't be able to display a description"
-Print "of what each boot entry is. You should make note of the order in which you add options. Note that for each operating"
-Print "system entry you add, we will need to create two physical partitions. Win PE / RE media and generic partitions only"
-Print "create one partition each. Note that while an operating system (Windows 10 or 11) will create two partitions, only one"
-Print "boot item is shown from the UEFI menu. As an example, if you create media that has Windows 10 and 11 (two operating"
-Print "systems), two Win PE / RE based programs, and one generic partition, you will see 4 selectable lines on the UEFI boot"
-Print "menu and seven partitions will be created."
-Pause
 
 GoTo HelpMakeMultiBootImage
 
-' Help Topic: Make or update a bootable drive from one or more Windows ISO images and Windows PE / RE images
+' Help Topic: Make or update a bootable drive from a Windows ISO image
 ' or update an already existing drive > Disk limitations
 
 DiskLimitationsHelp:
@@ -9825,7 +9013,7 @@ Print "the Windows editions, editions of Windows can be entirely removed from th
 Pause
 GoTo ProgramHelp
 
-' Help Topic: Get WIM info - display basic info for each WIM in an ISO image
+' Help Topic: Get WIM info - display basic info for each WIM in an ISO image and display Windows build number
 
 HelpGetWimInfo:
 
@@ -9840,11 +9028,16 @@ Print " Released "; ProgramReleaseDate$; "             "
 Color 0, 10
 Locate 3, 38
 Print " Program Help - Get WIM info - display basic info for each WIM in an ISO image ";
+Locate 4, 38
+Print "                and display Windows build number                               ";
 Locate 9, 1
 Color 15
 Print "There are times where it may be necessary to know what index number is associated with a particular Windows edition,"
 Print "or how many editions are stored in an image, or to view the NAME and DESCRIPTION metadata for Windows editions. This"
 Print "routine will display that information and optionally save the output to a text file."
+Print
+Print "This routine will also display the build number of the Windows editions in the image. Note that only one edition of"
+Print "Windows is actually checked for this information and that we assume all other editions are the same build."
 Pause
 GoTo ProgramHelp
 
@@ -11488,19 +10681,22 @@ Sub GetWimInfo_Main (SourcePath$, GetWimInfo_Silent)
 
     ' Declare local variables
 
+    Dim A As String ' Hold contents of WIM_Info2.txt for parsing
     Dim Architecture As String ' Tracks the architecture type of the selected ISO image
     Dim Cmd As String ' Holds a string that has been built to be run with a "Shell" command
+    Dim ff As Integer ' Hold the next available free file number
     Dim InstallFile As String
     Dim InstallFileTest As String
     Dim LocalTemp As String ' Temporary data
+    Dim SP_Build As String ' Second portion of the full Windows build number
+    Dim Version As String ' First portion of the full Windows build number
+    Dim X As Integer ' Temporary value used for manipulation of string
+    Dim Y As Integer ' Temporary value used for manipulation of string
 
     Shell "echo File Name: " + Mid$(SourcePath$, _InStrRev(SourcePath$, "\") + 1) + " > WIM_Info.txt"
     Shell "echo. >> WIM_Info.txt"
     Shell "echo ***************************************************************************************************** >> WIM_Info.txt"
     Shell "echo * Below is the list of Windows editions and associated indicies available for the above named file. * >> WIM_Info.txt"
-    Shell "echo *                                                                                                   * >> WIM_Info.txt"
-    Shell "echo * If you are viewing this file on screen via the app and the info is more than one screen long,     * >> WIM_Info.txt"
-    Shell "echo * press the SPACEBAR to advance one screen at a time, or ENTER to advance one line at a time.       * >> WIM_Info.txt"
     Shell "echo ***************************************************************************************************** >> WIM_Info.txt"
     Shell "echo. >> WIM_Info.txt"
 
@@ -11536,6 +10732,9 @@ Sub GetWimInfo_Main (SourcePath$, GetWimInfo_Silent)
         Shell "echo * This is a single architecture image * >> WIM_Info.txt"
         Shell "echo *************************************** >> WIM_Info.txt"
         Shell "echo. >> WIM_Info.txt"
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Get-WimInfo /WimFile:" + Chr$(34) + MountedImageDriveLetter$ + "\sources\install.wim" + Chr$(34) + " /index:1 > WIM_Info2.txt"
+        Shell Chr$(34) + Cmd$ + Chr$(34)
+        GoSub DetermineBuild
         Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Get-WimInfo /WimFile:" + Chr$(34) + MountedImageDriveLetter$ + "\sources\install.wim" + Chr$(34) + " >> WIM_Info.txt"
         Shell Chr$(34) + Cmd$ + Chr$(34)
     Else
@@ -11574,6 +10773,9 @@ Sub GetWimInfo_Main (SourcePath$, GetWimInfo_Silent)
         Else
             InstallFile$ = "\x64\sources\install.esd"
         End If
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Get-WimInfo  /WimFile:" + Chr$(34) + MountedImageDriveLetter$ + InstallFile$ + Chr$(34) + " /index:1 > WIM_Info2.txt"
+        Shell Chr$(34) + Cmd$ + Chr$(34)
+        GoSub DetermineBuild
         Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Get-WimInfo  /WimFile:" + Chr$(34) + MountedImageDriveLetter$ + InstallFile$ + Chr$(34) + " >> WIM_Info.txt"
         Shell Chr$(34) + Cmd$ + Chr$(34)
     End If
@@ -11587,6 +10789,44 @@ Sub GetWimInfo_Main (SourcePath$, GetWimInfo_Silent)
 
     Cmd$ = "powershell.exe -command " + Chr$(34) + "Dismount-DiskImage " + Chr$(34) + "'" + SourcePath$ + "'" + Chr$(34) + Chr$(34) + " > NUL"
     Shell Cmd$
+
+    GoTo Finish_GetWimInfo_Main:
+
+    DetermineBuild:
+
+    ' This subroutine determines the Windows build number
+
+    ff = FreeFile
+    Open "WIM_Info2.txt" For Binary As #ff
+    A$ = Space$(LOF(ff))
+    Get #ff, 1, A$
+    Close #ff
+
+    If _FileExists("WIM_Info2.txt") Then
+        Kill "WIM_Info2.txt"
+    End If
+
+    X = InStr(A$, "ServicePack Build")
+    Y = _InStrRev(X, A$, ":") + 2
+    Version$ = Mid$(A$, Y, ((X - Y) - 2))
+
+    X = InStr(A$, "ServicePack Level")
+    Y = _InStrRev(X, A$, ":") + 2
+    SP_Build$ = Mid$(A$, Y, ((X - Y) - 2))
+
+    Shell "echo *********************************************************************** >> WIM_Info.txt"
+    Shell "echo * The Windows editions in this image have the following build number: * >> WIM_Info.txt"
+
+    Cmd$ = "echo * " + Version$ + "." + SP_Build$ + Space$(68 - ((Len(Version$) + Len(SP_Build$) + 1))) + "* >> WIM_Info.txt"
+    Shell Cmd$
+    Shell "echo *                                                                     * >> WIN_Info.txt"
+    Shell "echo * Note: It is assumed that all editions have the same build number    * >> WIM_Info.txt"
+    Shell "echo *********************************************************************** >> WIM_Info.txt"
+    Shell "echo. >> WIM_Info.txt"
+
+    Return
+
+    Finish_GetWimInfo_Main:
 
 End Sub
 
@@ -11726,6 +10966,9 @@ Sub AddUpdatesStatusDisplay (CurrentImage, TotalImages, StatusIndicator)
     Dim OverallStatus As String
     Dim x As Integer
 
+    ' Reset the display window to 120 x 30 in case this was changed so that the status disply is properly formatted.
+
+    Width 120, 30
     Cls
 
     If ((CurrentImage = 0) And (TotalImages = 0)) Then
@@ -11834,8 +11077,7 @@ Sub AddUpdatesStatusDisplay (CurrentImage, TotalImages, StatusIndicator)
             Print
             Print "- Update Tasks: These tasks are performed for each Windows edition"
             Print "[             ] Mounting a Windows Edition"
-            Print "[             ] Adding Servicing Stack and Cumulative Updates, Pass 1"
-            Print "[             ] Adding Servicing Stack and Cumulative Updates, Pass 2"
+            Print "[             ] Adding Servicing Stack and Cumulative Updates"
             Print "[             ] Locking in Updates"
             Print "[             ] Adding Other Updates and Setup Dynamic Updates"
             Print "[             ] Creating Log Files"
@@ -11856,8 +11098,7 @@ Sub AddUpdatesStatusDisplay (CurrentImage, TotalImages, StatusIndicator)
             Print
             Color 0, 10: Print "- Update Tasks: These tasks are performed for each Windows edition": Color 15
             Print "[ ";: Color 10: Print "IN PROGRESS";: Color 15: Print " ] Mounting a Windows Edition": Color 15
-            Print "[             ] Adding Servicing Stack and Cumulative Updates, Pass 1"
-            Print "[             ] Adding Servicing Stack and Cumulative Updates, Pass 2"
+            Print "[             ] Adding Servicing Stack and Cumulative Updates"
             Print "[             ] Locking in Updates"
             Print "[             ] Adding Other Updates and Setup Dynamic Updates"
             Print "[             ] Creating Log Files"
@@ -11878,8 +11119,7 @@ Sub AddUpdatesStatusDisplay (CurrentImage, TotalImages, StatusIndicator)
             Print
             Print "- Update Tasks: These tasks are performed for each Windows edition"
             Print "[  COMPLETED  ] Mounting a Windows Edition"
-            Print "[             ] Adding Servicing Stack and Cumulative Updates, Pass 1"
-            Print "[             ] Adding Servicing Stack and Cumulative Updates, Pass 2"
+            Print "[             ] Adding Servicing Stack and Cumulative Updates"
             Print "[             ] Locking in Updates"
             Print "[             ] Adding Other Updates and Setup Dynamic Updates"
             Print "[             ] Creating Log Files"
@@ -11900,8 +11140,7 @@ Sub AddUpdatesStatusDisplay (CurrentImage, TotalImages, StatusIndicator)
             Print
             Print "- Update Tasks: These tasks are performed for each Windows edition"
             Print "[  COMPLETED  ] Mounting a Windows Edition"
-            Print "[             ] Adding Servicing Stack and Cumulative Updates, Pass 1"
-            Print "[             ] Adding Servicing Stack and Cumulative Updates, Pass 2"
+            Print "[             ] Adding Servicing Stack and Cumulative Updates"
             Print "[             ] Locking in Updates"
             Print "[             ] Adding Other Updates and Setup Dynamic Updates"
             Print "[             ] Creating Log Files"
@@ -11922,8 +11161,7 @@ Sub AddUpdatesStatusDisplay (CurrentImage, TotalImages, StatusIndicator)
             Print
             Print "- Update Tasks: These tasks are performed for each Windows edition"
             Print "[  COMPLETED  ] Mounting a Windows Edition"
-            Print "[             ] Adding Servicing Stack and Cumulative Updates, Pass 1"
-            Print "[             ] Adding Servicing Stack and Cumulative Updates, Pass 2"
+            Print "[             ] Adding Servicing Stack and Cumulative Updates"
             Print "[             ] Locking in Updates"
             Print "[             ] Adding Other Updates and Setup Dynamic Updates"
             Print "[             ] Creating Log Files"
@@ -11938,36 +11176,13 @@ Sub AddUpdatesStatusDisplay (CurrentImage, TotalImages, StatusIndicator)
             Print "[  COMPLETED  ] Updating WinRE"
             Print "[  COMPLETED  ] Updating WinPE (Index 1 of 2)"
             Print "[ ";: Color 10: Print "IN PROGRESS";: Color 15: Print " ] Updating WinPE (Index 2 of 2)"
-        Case 6
-            Print "- Pre-Update Task: This task is performed once before applying updates"
-            Print "[  COMPLETED  ] Exporting All Windows Editions"
-            Print
-            Color 0, 10: Print "- Update Tasks: These tasks are performed for each Windows edition": Color 15
-            Print "[  COMPLETED  ] Mounting a Windows Edition"
-            Print "[ ";: Color 10: Print "IN PROGRESS";: Color 15: Print " ] Adding Servicing Stack and Cumulative Updates, Pass 1"
-            Print "[             ] Adding Servicing Stack and Cumulative Updates, Pass 2"
-            Print "[             ] Locking in Updates"
-            Print "[             ] Adding Other Updates and Setup Dynamic Updates"
-            Print "[             ] Creating Log Files"
-            Print "[             ] Unmounting and Saving Windows Edition"
-            Print
-            Print "- Post-Update Tasks: These tasks are performed after updating images to create the final ISO image"
-            Print "[             ] Creating Base Image"
-            Print "[             ] Moving Updated WIM Files to Base Image and Syncing File Versions"
-            Print "[             ] Creating Final ISO Image"
-            Print
-            Print "- WinRE and WinPE: Updates applied upon finding first x64 and first x86 instance of these items"
-            Print "[  COMPLETED  ] Updating WinRE"
-            Print "[  COMPLETED  ] Updating WinPE (Index 1 of 2)"
-            Print "[  COMPLETED  ] Updating WinPE (Index 2 of 2)"
         Case 7
             Print "- Pre-Update Task: This task is performed once before applying updates"
             Print "[  COMPLETED  ] Exporting All Windows Editions"
             Print
             Color 0, 10: Print "- Update Tasks: These tasks are performed for each Windows edition": Color 15
             Print "[  COMPLETED  ] Mounting a Windows Edition"
-            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates, Pass 1"
-            Print "[ ";: Color 10: Print "IN PROGRESS";: Color 15: Print " ] Adding Servicing Stack and Cumulative Updates, Pass 2"
+            Print "[ ";: Color 10: Print "IN PROGRESS";: Color 15: Print " ] Adding Servicing Stack and Cumulative Updates"
             Print "[             ] Locking in Updates"
             Print "[             ] Adding Other Updates and Setup Dynamic Updates"
             Print "[             ] Creating Log Files"
@@ -11988,8 +11203,7 @@ Sub AddUpdatesStatusDisplay (CurrentImage, TotalImages, StatusIndicator)
             Print
             Color 0, 10: Print "- Update Tasks: These tasks are performed for each Windows edition": Color 15
             Print "[  COMPLETED  ] Mounting a Windows Edition"
-            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates, Pass 1"
-            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates, Pass 2"
+            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates"
             Print "[ ";: Color 10: Print "IN PROGRESS";: Color 15: Print " ] Locking in Updates"
             Print "[             ] Adding Other Updates and Setup Dynamic Updates"
             Print "[             ] Creating Log Files"
@@ -12010,8 +11224,7 @@ Sub AddUpdatesStatusDisplay (CurrentImage, TotalImages, StatusIndicator)
             Print
             Color 0, 10: Print "- Update Tasks: These tasks are performed for each Windows edition": Color 15
             Print "[  COMPLETED  ] Mounting a Windows Edition"
-            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates, Pass 1"
-            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates, Pass 2"
+            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates"
             Print "[  COMPLETED  ] Locking in Updates"
             Print "[ ";: Color 10: Print "IN PROGRESS";: Color 15: Print " ] Adding Other Updates and Setup Dynamic Updates"
             Print "[             ] Creating Log Files"
@@ -12032,8 +11245,7 @@ Sub AddUpdatesStatusDisplay (CurrentImage, TotalImages, StatusIndicator)
             Print
             Color 0, 10: Print "- Update Tasks: These tasks are performed for each Windows edition": Color 15
             Print "[  COMPLETED  ] Mounting a Windows Edition"
-            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates, Pass 1"
-            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates, Pass 2"
+            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates"
             Print "[  COMPLETED  ] Locking in Updates"
             Print "[  COMPLETED  ] Adding Other Updates and Setup Dynamic Updates"
             Print "[ ";: Color 10: Print "IN PROGRESS";: Color 15: Print " ] Creating Log Files"
@@ -12054,8 +11266,7 @@ Sub AddUpdatesStatusDisplay (CurrentImage, TotalImages, StatusIndicator)
             Print
             Color 0, 10: Print "- Update Tasks: These tasks are performed for each Windows edition": Color 15
             Print "[  COMPLETED  ] Mounting a Windows Edition"
-            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates, Pass 1"
-            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates, Pass 2"
+            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates"
             Print "[  COMPLETED  ] Locking in Updates"
             Print "[  COMPLETED  ] Adding Other Updates and Setup Dynamic Updates"
             Print "[  COMPLETED  ] Creating Log Files"
@@ -12076,8 +11287,7 @@ Sub AddUpdatesStatusDisplay (CurrentImage, TotalImages, StatusIndicator)
             Print
             Print "- Update Tasks: These tasks are performed for each Windows edition"
             Print "[  COMPLETED  ] Mounting a Windows Edition"
-            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates, Pass 1"
-            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates, Pass 2"
+            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates"
             Print "[  COMPLETED  ] Locking in Updates"
             Print "[  COMPLETED  ] Adding Other Updates and Setup Dynamic Updates"
             Print "[  COMPLETED  ] Creating Log Files"
@@ -12098,8 +11308,7 @@ Sub AddUpdatesStatusDisplay (CurrentImage, TotalImages, StatusIndicator)
             Print
             Print "- Update Tasks: These tasks are performed for each Windows edition"
             Print "[  COMPLETED  ] Mounting a Windows Edition"
-            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates, Pass 1"
-            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates, Pass 2"
+            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates"
             Print "[  COMPLETED  ] Locking in Updates"
             Print "[  COMPLETED  ] Adding Other Updates and Setup Dynamic Updates"
             Print "[  COMPLETED  ] Creating Log Files"
@@ -12120,8 +11329,7 @@ Sub AddUpdatesStatusDisplay (CurrentImage, TotalImages, StatusIndicator)
             Print
             Print "- Update Tasks: These tasks are performed for each Windows edition"
             Print "[  COMPLETED  ] Mounting a Windows Edition"
-            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates, Pass 1"
-            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates, Pass 2"
+            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates"
             Print "[  COMPLETED  ] Locking in Updates"
             Print "[  COMPLETED  ] Adding Other Updates and Setup Dynamic Updates"
             Print "[  COMPLETED  ] Creating Log Files"
@@ -12142,8 +11350,7 @@ Sub AddUpdatesStatusDisplay (CurrentImage, TotalImages, StatusIndicator)
             Print
             Print "- Update Tasks: These tasks are performed for each Windows edition"
             Print "[  COMPLETED  ] Mounting a Windows Edition"
-            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates, Pass 1"
-            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates, Pass 2"
+            Print "[  COMPLETED  ] Adding Servicing Stack and Cumulative Updates"
             Print "[  COMPLETED  ] Locking in Updates"
             Print "[  COMPLETED  ] Adding Other Updates and Setup Dynamic Updates"
             Print "[  COMPLETED  ] Creating Log Files"
@@ -12290,8 +11497,7 @@ Sub AddUpdatesStatusDisplay (CurrentImage, TotalImages, StatusIndicator)
             Print
             Color 0, 10: Print "- Update Tasks: These tasks are performed for each Windows edition": Color 15
             Print "[ ";: Color 10: Print "IN PROGRESS";: Color 15: Print " ] Mounting a Windows Edition": Color 15
-            Print "[             ] Adding Servicing Stack and Cumulative Updates, Pass 1"
-            Print "[             ] Adding Servicing Stack and Cumulative Updates, Pass 2"
+            Print "[             ] Adding Servicing Stack and Cumulative Updates"
             Print "[             ] Locking in Updates"
             Print "[             ] Adding Other Updates and Setup Dynamic Updates"
             Print "[             ] Creating Log Files"
@@ -14145,4 +13351,93 @@ End Sub
 '
 ' 19.1.4.182 - October 25, 2021
 ' Changed wording on a menu item.
+'
+' 19.1.5.183 - November 24, 2021
+' For the option to display WIM image information, we have added a few lines at the end of the output to show the build number of the
+' Windows editions in the image. Help has been updated to note that this information is displayed.
+'
+' 19.1.6.184 - November 27, 2021
+' For the option to display Windows image information, this dual architecture version was different from the x64 only version of the
+' program in that it displayed the Windows build information after the info for each individual edition. This doesn't look that great
+' and is inconsistent with the other version. The code was reworked to correct this situation.
+'
+' 19.1.7,185 - January 11, 2022
+' For the routine that injects updates, after the user enters a filename or path for the source, we need to determine if what was
+' entered is a filename or a path. There was a bug in this logic causing a fault in the program if a path was entered. This is now
+' resolved.
+'
+' 19.1.8.186 - January 12, 2022
+' When updates are being injected into Windows images, the screen that shows the current progress is very much reliant upon being
+' properly sized as 120 x 30. If the user has either accidentally or purposely changed the size of the program window, the status
+' screen will not look very good at all. As a result, each time we refresh the status display, we will now reset the screen to
+' a size of 120 x 30.
+'
+' 19.2.0.187 - January 13, 2022
+' We had previously introducednew functionality to the routine for creating bootable media to allow for the creation of media that
+' could boot multiple Operating Systems and / or WinPE / WinRE based media such as various recovery disks, etc. This routine is
+' being removed at this time, but may be added back at a later date. There are several reasons for this:
+'
+' 1) We have seen several occurences of BSODs with no clear understanding yet of the cause.
+' 2) The result looks sloppy - there is no nice boot menu and the resulting boot is also inconsistent on different systems. On some
+'    systems you will see a boot menu item for each partition (both FAT32 and NTFS) while some systems show only the FAT32
+'    partitions. It just looks sloppy and seems a little half-baked when compared to the rest of this program.
+'
+' 19.2.1.188 - January 14, 2022
+' Permanently removed the option that we described as having disabled in the Jan 13, 2022 release notes. It's clear that if we are
+' ever to bring back this functionality a major rewrite of that code would be needed.
+'
+' 19.2.2.189 - January 17, 2022
+' Rewording of a menu item and help text for improved clarity.
+'
+' 19.2.3.190 - January 24, 2022
+' Added the ability to easily switch the program between applying separate SSU updates or combined LCU / SSU updates.
+' At the start of routine to inject updates, if we set ProcessSeparateSSU to 1, then we process a separate SSU update.
+' If set to 0, then we process a combined LCU / SSU update.
+'
+' 19.2.4.191 - January 25, 2022
+' When injecting Windows updates, there was a logic flaw. At the end of the process, we were moving the install.wim to the final
+' destination. However, this results in a significantly larger file. Rather than simply moving it, we should be exporting each
+' index to the destination. We correctly perform a cleanup operation on the install.wim, however, the cleanup has no effect on
+' the size until an export is performed. So, as a result of neglecting to perform the export, we miss out on the benefit of the
+' cleanup that was performed earlier. This has now been corrected.
+'
+' 19.2.5.192 - January 25, 2022
+' Found that there was still a discrepancy in the size of final ISO image created by a batch file that I was using and this
+' program. Noted that there was a significant difference in the boot.wim size. That led to the discovery that a variable I
+' was using was wrong in some places. There was both a SSU_Update_Avail$ and an SSU_Update_Avail$. This has been corrected.
+' In addition, we were moving the original boot.wim to the final location rather than the updated file. This too has been corrected.
+'
+' 19.3.0.193 - February 10, 2022
+' If in an effort to finally put the issue of how to properly apply combined LCU / SSU updates, we have performed so testing. Microsoft
+' documentation says that SSU updates should be applied first, followed by certain other updates, and then the LCU should be applied.
+' From my testing, it looks like this information is now outdated. For an online installation of Windows this may still apply, but it
+' seems that for an offline servicing of a Windows image, the following should be done:
+'
+' 1) For WinRE.WIM - Apply the combined LCU / SSU update at the time where the SSU would normally be applied.
+' 2) For BOOT.WIM (WinPE) - Apply the combined LCU / SSU update at the time where the LCU was previously applied and apply nothing where the
+'    SSU was previously applied.
+' 3) For INSTALL.WIM (the main OS) - Apply the combined LCU / SSU update at the time where the LCU was previously applied and apply nothing
+'    where the SSU was previously applied.
+'
+' 19.3.1.194 - February 12, 2022
+' Noticed recently that performing a "clean" within diskpart on a flash drive will often fail the first time it is run. Oddly, it always works
+' the second time. It seems that this affects not only manually running the command, but affects this program as well. As a result, we simply
+' run the "clean" command twice.
+'
+' 19.3.2.195 - February 13, 2022
+' Came accross a program that needs to access the .WIM files in a Windows image. For some silly reason, this program is sensitive to the case
+' of the file names, wanting only lowercase characters. There are places in the program where we were saving these file names using uppercase
+' characters. This has been changed to use all lowercase.
+'
+' In addition, we have made a change to all ISO image creation routines. The timestamp of all files added to the image will now be set to the
+' time at which the creation of the image was started. This will allow for easy identification of when an image was created.
+'
+' 19.3.3.196 - February 18, 2022
+' Further refinement to the "clean" operation on media that we are writing to. There is a problem where performing a "clean" in diskpart will
+' sometimes fail the first time. It usually works the second time but in testing with batch files we have seen failures even on the second
+' time. The failures only seem to happen on MBR disks. As a result, we are performing a clean operation twice, attempting to set it to GPT
+' each time. Finally, after a third clean we set it to the final desired state of either GPT or MBR.
+'
+' 19.3.4.197 - March 16, 2022
+' Very minor changes to wording of some text in help. No functional changes in this update.
 

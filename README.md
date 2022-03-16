@@ -3,8 +3,8 @@ WIM (Windows Image Management) Tools is a set of tools to create, modify, and ma
 
 NOTE: You can download everything needed for this project by simply grabbing the WIM_Tools.zip. Technically, you will only need the WIM Tools.exe but the .zip file will provide the source code and User Guide as well.  
 
-Version: 19.0.4.182  
-Release Date: Nov 5, 2021  
+Version: 19.3.4.197  
+Release Date: Mar 16, 2022  
 
 
 *****************************************************************
@@ -43,7 +43,7 @@ https://docs.microsoft.com/en-us/windows-hardware/get-started/adk-install
 
 Run the program locally, not from a network location. I have not tested the program or designed it to run from a network location. 
 
-When operating on multiple editions of Windows in the same project (for example, Win 10 Pro, Home, Education editions, etc.), this program is designed to work with editions of the same version. For example, you do not want to mix version 20H2 and 21H1 in the same project.
+When operating on multiple editions of Windows in the same project (for example, Win 10 Pro, Home, Education editions, etc.), this program is designed to work with editions of the same version. For example, you do not want to mix version 20H2 and 21H1 in the same project. In addition, you should only create ISO images where all Windows editions are of the same build number.
 
 No additional memory beyond the standard requirements for Windows is needed.
 

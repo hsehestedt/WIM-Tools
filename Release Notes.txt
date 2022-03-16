@@ -2,21 +2,28 @@
 * Changes in the Current Release *
 **********************************
 
-v19.1.4.182
+v19.3.4.197
 
-Bug fix: Under a specific set of circumstances we were running the code to ask the user what disk to write the image to twice. This has been resolved.
+New: When using the routine to display WIM information, we now display the build number.
 
-Enhanced: Microsoft now distributes the the SSU and LCU in one combined package. We have changed our code to work with this new model.
+Change: We have encountered a program that needs to access the WIM files contained in a Windows ISO image. That program fails if the .WIM extension is not in lowercase. While not technically a problem with this program, we now save all WIM files with a lowercase extension.
 
-Enhanced: Added a couple of lines to the section of code that cleans up project files. In rare circumstances, a user could abort the program at a point in time where cleanup of files becomes difficult. We've added a couple lines to try to even more aggressively try to
-cleanup such files.
+Change: When creating an ISO image, the timestamp of files will be set to the time that the ISO image creation was started in order to allow easy identification of when that image was created. Note that when booting from media or an ISO created by the program, when Windows setup displays the list of available editions, the timestamp of those editions are NOT altered.
 
-Enhanced: Changed some wording of on screen progress indicator. With the new combined SSU and LCU updates, if an SSU exists, the first pass (where the SSU would be applied) completes rather quickly, and then the LCU is added on the second pass which can
-take quite a while. However, if no SSU exists, then it the first pass already applies the LCU and the second pass completes almost instantly since there is nothing left to be done. The wording of the progress screens is now changed to reflect the fact that the SSU and LCU are combined and we simply call the 2 passes "pass 1" and "pass 2".
+Change: We had previously introducednew functionality to the routine for creating bootable media to allow for the creation of media that could boot multiple Operating Systems and / or WinPE / WinRE based media such as various recovery disks, etc. This routine is being removed at this time, but may be added back at a later date. There are several reasons for this:
 
-Other Minor Fixes and Changes: Changed the wording of a few messages in the routine to extract the contents of .CAB files for clarity.
+1) We have seen several occurences of BSODs with no clear understanding yet of the cause.
+2) The result looks sloppy - there is no nice boot menu and the resulting boot is also inconsistent on different systems. On some systems you will see a boot menu item for each partition (both FAT32 and NTFS) while some systems show only the FAT32 partitions. It just looks sloppy and seems a little half-baked when compared to the rest of this program.
 
-Changed wording on a menu item.
+Fix: For the routine to inject Windows updates, a user can enter a path to a location with one or more Windows images, or they can enter a full path with a specific filename included. There was a logic fault when a path without a filename was entered. This has been resolved.
+
+Fix: When updates are being applied, the screen showing current status is designed to be displayed at 120 colums by 30 rows of text. If a user purposely or accidentally changes the screen size, this display will look very poor. To correct for this, with each status update we now resize the window to thew proper size.
+
+Fix: When injecting Windows updates, there was a logic flaw. At the end of the process, we were moving the install.wim to the final destination. However, this results in a significantly larger file. Rather than simply moving it, we should be exporting each index to the destination. We correctly perform a cleanup operation on the install.wim, however, the cleanup has no effect on the size until an export is performed. So, as a result of neglecting to perform the export, we miss out on the benefit of the cleanup that was performed earlier. This has now been corrected.
+
+Fix: Recently, it has been noticed that the "clean" command when issued in diskpart, would sometime fail the first time it is run. We have implemented a fix that should fix this. We have seen no problems since implementing this workaround.
+
+Other: Some minor rewording of messages and help have been made to make these easier to understand.
 
 
 ******************
@@ -35,6 +42,22 @@ ISO.ico
 **********************
 * Previous Releases: *
 **********************
+
+v19.1.4.182
+
+Bug fix: Under a specific set of circumstances we were running the code to ask the user what disk to write the image to twice. This has been resolved.
+
+Enhanced: Microsoft now distributes the the SSU and LCU in one combined package. We have changed our code to work with this new model.
+
+Enhanced: Added a couple of lines to the section of code that cleans up project files. In rare circumstances, a user could abort the program at a point in time where cleanup of files becomes difficult. We've added a couple lines to try to even more aggressively try to
+cleanup such files.
+
+Enhanced: Changed some wording of on screen progress indicator. With the new combined SSU and LCU updates, if an SSU exists, the first pass (where the SSU would be applied) completes rather quickly, and then the LCU is added on the second pass which can
+take quite a while. However, if no SSU exists, then it the first pass already applies the LCU and the second pass completes almost instantly since there is nothing left to be done. The wording of the progress screens is now changed to reflect the fact that the SSU and LCU are combined and we simply call the 2 passes "pass 1" and "pass 2".
+
+Other Minor Fixes and Changes: Changed the wording of a few messages in the routine to extract the contents of .CAB files for clarity.
+
+Changed wording on a menu item.
 
 v19.0.3.175 - Fixed a critical bug where we were skipping an entire section of code because we accidentally commented out a line of code.
 
