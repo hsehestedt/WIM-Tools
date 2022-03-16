@@ -1,0 +1,76 @@
+**********************************
+* Changes in the Current Release *
+**********************************
+
+v19.3.4.197
+
+New: When using the routine to display WIM information, we now display the build number.
+
+Change: We have encountered a program that needs to access the WIM files contained in a Windows ISO image. That program fails if the .WIM extension is not in lowercase. While not technically a problem with this program, we now save all WIM files with a lowercase extension.
+
+Change: When creating an ISO image, the timestamp of files will be set to the time that the ISO image creation was started in order to allow easy identification of when that image was created. Note that when booting from media or an ISO created by the program, when Windows setup displays the list of available editions, the timestamp of those editions are NOT altered.
+
+Change: We had previously introducednew functionality to the routine for creating bootable media to allow for the creation of media that could boot multiple Operating Systems and / or WinPE / WinRE based media such as various recovery disks, etc. This routine is being removed at this time, but may be added back at a later date. There are several reasons for this:
+
+1) We have seen several occurences of BSODs with no clear understanding yet of the cause.
+2) The result looks sloppy - there is no nice boot menu and the resulting boot is also inconsistent on different systems. On some systems you will see a boot menu item for each partition (both FAT32 and NTFS) while some systems show only the FAT32 partitions. It just looks sloppy and seems a little half-baked when compared to the rest of this program.
+
+Fix: For the routine to inject Windows updates, a user can enter a path to a location with one or more Windows images, or they can enter a full path with a specific filename included. There was a logic fault when a path without a filename was entered. This has been resolved.
+
+Fix: When updates are being applied, the screen showing current status is designed to be displayed at 120 colums by 30 rows of text. If a user purposely or accidentally changes the screen size, this display will look very poor. To correct for this, with each status update we now resize the window to thew proper size.
+
+Fix: When injecting Windows updates, there was a logic flaw. At the end of the process, we were moving the install.wim to the final destination. However, this results in a significantly larger file. Rather than simply moving it, we should be exporting each index to the destination. We correctly perform a cleanup operation on the install.wim, however, the cleanup has no effect on the size until an export is performed. So, as a result of neglecting to perform the export, we miss out on the benefit of the cleanup that was performed earlier. This has now been corrected.
+
+Fix: Recently, it has been noticed that the "clean" command when issued in diskpart, would sometime fail the first time it is run. We have implemented a fix that should fix this. We have seen no problems since implementing this workaround.
+
+Other: Some minor rewording of messages and help have been made to make these easier to understand.
+
+
+******************
+* Files affected *
+******************
+
+WIM_Tools.bas - QB64 Source Code
+WIM_Tools.exe - Compiled Executable
+WIM Tools User Guide.pdf
+
+The following files are unchanged:
+
+ISO.ico
+
+
+**********************
+* Previous Releases: *
+**********************
+
+v19.1.4.182
+
+Bug fix: Under a specific set of circumstances we were running the code to ask the user what disk to write the image to twice. This has been resolved.
+
+Enhanced: Microsoft now distributes the the SSU and LCU in one combined package. We have changed our code to work with this new model.
+
+Enhanced: Added a couple of lines to the section of code that cleans up project files. In rare circumstances, a user could abort the program at a point in time where cleanup of files becomes difficult. We've added a couple lines to try to even more aggressively try to
+cleanup such files.
+
+Enhanced: Changed some wording of on screen progress indicator. With the new combined SSU and LCU updates, if an SSU exists, the first pass (where the SSU would be applied) completes rather quickly, and then the LCU is added on the second pass which can
+take quite a while. However, if no SSU exists, then it the first pass already applies the LCU and the second pass completes almost instantly since there is nothing left to be done. The wording of the progress screens is now changed to reflect the fact that the SSU and LCU are combined and we simply call the 2 passes "pass 1" and "pass 2".
+
+Other Minor Fixes and Changes: Changed the wording of a few messages in the routine to extract the contents of .CAB files for clarity.
+
+Changed wording on a menu item.
+
+v19.0.3.175 - Fixed a critical bug where we were skipping an entire section of code because we accidentally commented out a line of code.
+
+v19.0.1.173 - A quick bug fix. We were hiding partitions even when a user chose option not to hide partitions. This has been resolved.
+
+v19.0.0.172 - For the routine to create bootable media, we've add a whole new capability. Up until now, you could create a single bootable item but you could add additional partitions for other data on the same disk. We have now added the capability to create bootable media that can allow you to choose between multiple items. For example, you might be able to choose between Windows 10, Windows 11, a Macrium Reflect recovery disk, and more. At the same time you could still have additional partitions. Note that this option works only with x64 UEFI based systems, however, especially now with the release of Windows 11, x86 BIOS based systems are becoming less common and you may never need to deal it. Note that the new mode for creation of multiple bootable partitions does not yet have BitLocker support or the ability to refresh partitions with updates. For the moment, both of these operations can be easily accomplished manually but those features are coming soon.v18.2.0.168 - Made some significant changes specifically to better accomodate scripting. If the number of files in a source folder changed, this would break scripting because it changes your responses when the program asks if you want to update each individual file. To eliminate this problem, the program will now allow you to specify a full path including a file name. This way the program does not need to inquire about each file because you are specifying each file unambiguously. In addition, the script files are now a little easier to read and manually modify.
+
+v18.1.8.167 - Fixed a bug that only happens when program goes back to start and reinitializes. For example, after a routine is run to completion and we return to the main menu. Right near the start of the program we stored the current working directory in a variable so that we knew the location from where the program was started. However, we then change the working directory to a temporary location where we can create temporary files. When jumping back to the start, we clear all variables and loose track of the original working directory. As a result, it is essential that we change the current working directory back to the original location before we jump back to the beginning of the program.
+
+Also added a note in the help for scripting to make users aware that changing contents of directories can cause script failures.
+
+Finally, the shutdown option was not working when the system was locked. The program was missing a "/f" option to force the shutdown. Without this, a shutdown cannot be performaed when the system is locked. We also provide a chance to abort shutdown.
+
+v18.1.7.166 - In the newly rewritten "PAUSE" routine, we have 2 loops that wait for a key press and a key release. These loops were running at an unlimited speed which could cause high CPU utilization. Revised the code so that these loops run only 50 times per second.
+
+v18.1.6.165 - Rewrote the "pause" routine. This was a very simple routine that simply printed a blank line and then paused execution of the program until the user hit a key. The pause was accomplished by running the command line utility "pause" from a QB64 "shell" statement. For most purposes this is fine, except that it would not take input from the QB64 keyboard buffer. As a result, taking a series of commands and pasting them into the program would not work when a pause is encountered. This also has the potential to cause problems if we want to expand scripting capabilities in the future. The rewrite of this routine solves this.
