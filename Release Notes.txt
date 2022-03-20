@@ -2,6 +2,34 @@
 * Changes in the Current Release *
 **********************************
 
+v20.0.1.200
+
+Major new release: 
+
+New Feature: Added a new feature to the menu. There are a lot of people who have ISO images using an install.esd rather than an install.wim. There are occasions where it may be difficult to obtain a release of an image with .wim and only the .esd version of the image is available. As a result, we now have the ability to convert an image with an install.esd into an image with an install.wim.
+
+This feature supports both single and dual architecture images. Please note that we currently support conversion of the entire ISO image only. Once converted to an image with a .wim, you can use the available routines in this program to create a new image with only the Windows editions that you want / require.
+
+Updated: Revised the help menu so that help topics align with the actual menu item numbers. Previously, the numbers were offset by one. For example, menu item 1 was help topic 2. The help topic numbers now align with the numbers on the main menu precisely to avoid any potential confusion.
+
+
+******************
+* Files affected *
+******************
+
+WIM_Tools.bas - QB64 Source Code
+WIM_Tools.exe - Compiled Executable
+WIM Tools User Guide.pdf
+
+The following files are unchanged:
+
+ISO.ico
+
+
+**********************
+* Previous Releases: *
+**********************
+
 v19.3.4.197
 
 New: When using the routine to display WIM information, we now display the build number.
@@ -24,24 +52,6 @@ Fix: When injecting Windows updates, there was a logic flaw. At the end of the p
 Fix: Recently, it has been noticed that the "clean" command when issued in diskpart, would sometime fail the first time it is run. We have implemented a fix that should fix this. We have seen no problems since implementing this workaround.
 
 Other: Some minor rewording of messages and help have been made to make these easier to understand.
-
-
-******************
-* Files affected *
-******************
-
-WIM_Tools.bas - QB64 Source Code
-WIM_Tools.exe - Compiled Executable
-WIM Tools User Guide.pdf
-
-The following files are unchanged:
-
-ISO.ico
-
-
-**********************
-* Previous Releases: *
-**********************
 
 v19.1.4.182
 
