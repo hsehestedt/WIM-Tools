@@ -18,7 +18,7 @@ Option _Explicit
 Rem $DYNAMIC
 $ExeIcon:'iso.ico'
 $VersionInfo:CompanyName=Hannes Sehestedt
-$VersionInfo:FILEVERSION#=19,3,4,197
+$VersionInfo:FILEVERSION#=20,0,1,200
 $VersionInfo:ProductName=WIM Tools Dual Architecture Edition
 $VersionInfo:LegalCopyright=(c) 2022 by Hannes Sehestedt
 $Console:Only
@@ -88,8 +88,8 @@ End If
 Dim Shared ProgramVersion As String ' Holds the current program version. This is displayed in the console title throughout the program
 Dim ProgramReleaseDate As String
 
-ProgramVersion$ = "19.3.4.197"
-ProgramReleaseDate$ = "Mar 16, 2022"
+ProgramVersion$ = "20.0.1.200"
+ProgramReleaseDate$ = "Mar 19, 2022"
 
 
 ' ******************************************************************************************************************
@@ -134,7 +134,7 @@ Dim CurrentIndex As String ' A counter used to keep track of the index number wi
 Dim CurrentIndexCount As Integer
 Dim CurrentTime As String ' Date and Time combined with a comma as a separator
 Dim Description As String ' Holds the description metadata to be assigned to a Windows edition within an image
-Dim DescriptionFromFile As String ' Holds the DESCRIPTION field of an image parsed from WIM_Info.txt file
+Dim DescriptionFromFile As String ' Holds the DESCRIPTION field of an image parsed from Image_Info.txt file
 Dim DestArcFlag As String ' A flag that varies wit the architecture type used to build out a final path
 Dim Destination As String ' Destination path
 Dim DestinationFileName As String ' The file name of the ISO image to be created without a path
@@ -160,6 +160,7 @@ Dim ExportFolder As String ' Used by the routine for exporting drivers from a sy
 Dim FAT32DriveLetter As String ' Letter assigned to 1st partition
 Dim ff As Long ' Holds the value returned by FREEFILE to determine an available file number
 Dim ff2 As Long
+Dim FileContents As String ' Temp copy of output from a DISM command in routine to cvonvert ESD to WIM
 Dim FileLength As Single
 Dim FileSourceType As String
 Dim FinalImageName As String
@@ -193,7 +194,7 @@ Dim Midnight As Integer ' Just before creating an ISO image, set to "1" if we ar
 Dim MoreFolders As String
 Dim MountDir As String ' Used to hold text while reading from a file looking for a DISM mount location
 Dim Multiplier As Single
-Dim NameFromFile As String ' Holds the NAME field of an image parsed from WIM_Info.txt file
+Dim NameFromFile As String ' Holds the NAME field of an image parsed from Image_Info.txt file
 Dim NewLabel As String
 Dim NumberOfx64Updates As Integer
 Dim NumberOfx86Updates As Integer
@@ -217,6 +218,7 @@ Dim Setup_DU As String ' Holds the location of the Setup Dynamic update file
 Dim Silent As String
 Dim SingleImageTag As String
 Dim SingleImageCount As Integer
+Dim Source As String ' Source file in an ESD to WIM conversion
 Dim SourceArcFlag As String
 Dim SourcePath As String ' Holds the path containing the files to be injected into an ISO image file
 Dim SourceFolder As String ' Will hold a folder name
@@ -253,7 +255,7 @@ Dim VolLabel As String
 Dim VolumeLabel As String
 Dim VolumeName As String ' Used by the routine to create a generic ISO image to store the volume name that the user would like to assign to the image
 Dim WimInfo As String ' Holds lines of text as they are being read from WinInfo.txt file
-Dim WimInfoFound As Integer ' A flag used to indicate whether an index specified by user was found successfully in WIM_Info.txt file
+Dim WimInfoFound As Integer ' A flag used to indicate whether an index specified by user was found successfully in Image_Info.txt file
 Dim WipeOrRefresh As Integer
 Dim x64ExportCount As Integer
 Dim x86ExportCount As Integer
@@ -477,21 +479,22 @@ Print "    4) Make or update a bootable drive from a Windows ISO image          
 Print "    5) Create a bootable Windows ISO image that can include multiple editions                                   "
 Print "    6) Create a bootable ISO image from Windows files in a folder                                               "
 Print "    7) Reorganize the contents of a Windows ISO image                                                           "
+Print "    8) Convert an image with an install.esd into an image with an install.wim                                   "
 Color 0, 3
-Print "    8) Get WIM info - display basic info for each WIM in an ISO image and display Windows build number          "
-Print "    9) Modify the NAME and DESCRIPTION values for entries in a WIM file                                         "
+Print "    9) Get image info - display basic info for each edition in an ISO image and display Windows build number    "
+Print "   10) Modify the NAME and DESCRIPTION values for entries in a WIM file                                         "
 Color 0, 6
-Print "   10) Export drivers from this system                                                                          "
-Print "   11) Expand drivers supplied in a .CAB file                                                                   "
-Print "   12) Create a Virtual Disk (VHDX)                                                                             "
-Print "   13) Create a VHD, deploy Windows to it, and add it to the boot menu to make a dual boot configuration        "
-Print "   14) Create a generic ISO image and inject files and folders into it                                          "
-Print "   15) Cleanup files and folders                                                                                "
+Print "   11) Export drivers from this system                                                                          "
+Print "   12) Expand drivers supplied in a .CAB file                                                                   "
+Print "   13) Create a Virtual Disk (VHDX)                                                                             "
+Print "   14) Create a VHD, deploy Windows to it, and add it to the boot menu to make a dual boot configuration        "
+Print "   15) Create a generic ISO image and inject files and folders into it                                          "
+Print "   16) Cleanup files and folders                                                                                "
 Color 15
 Color 0, 13
-Print "   16) Program help                                                                                             "
+Print "   17) Program help                                                                                             "
 Color 0, 8
-Print "   17) Exit                                                                                                     "
+Print "   18) Exit                                                                                                     "
 Locate 3, 40: Color 0, 14:
 Print "   ";
 Color 15
@@ -513,8 +516,8 @@ Locate 5, 40: Color 0, 13
 Print "   ";
 Color 15
 Print " Help"
-Locate 27, 0
-Input "   Please make a selection by number (17 Exits from the program): ", MenuSelection
+Locate 28, 0
+Input "   Please make a selection by number (18 Exits from the program): ", MenuSelection
 
 ' Some routines require that the Windows ADK be installed. We will now check to see if the option selected by the user is one of those routines.
 ' If it is, then we warn the user and return them to the main menu. If the ADK was found, then we skip this check.
@@ -522,7 +525,7 @@ Input "   Please make a selection by number (17 Exits from the program): ", Menu
 If ADKFound = 1 Then GoTo Skip_ADK_Check
 
 Select Case MenuSelection
-    Case 1, 2, 3, 5, 7, 11, 12, 13, 14, 15
+    Case 1, 2, 3, 5, 6, 7, 8, 9, 10, 14, 15, 16
         Cls
         Color 14, 4: Print "WARNING!";: Color 15: Print " The routine selected from the menu requires the Windows ADK to be installed. We have detected that the ADK"
         Print "is not installed on this system. Please install the ADK and restart this program to perform this operation."
@@ -599,24 +602,26 @@ Select Case MenuSelection
     Case 7
         GoTo ChangeOrder
     Case 8
-        GoTo GetWimInfo
+        GoTo ConvertEsdToWim
     Case 9
-        GoTo NameAndDescription
+        GoTo GetWimInfo
     Case 10
-        GoTo ExportDrivers
+        GoTo NameAndDescription
     Case 11
-        GoTo ExpandDrivers
+        GoTo ExportDrivers
     Case 12
-        GoTo CreateVHDX
+        GoTo ExpandDrivers
     Case 13
-        GoTo AddVHDtoBootMenu
+        GoTo CreateVHDX
     Case 14
-        GoTo CreateISOImage
+        GoTo AddVHDtoBootMenu
     Case 15
-        GoTo GetFolderToClean
+        GoTo CreateISOImage
     Case 16
-        GoTo ProgramHelp
+        GoTo GetFolderToClean
     Case 17
+        GoTo ProgramHelp
+    Case 18
         GoTo ProgramEnd
 End Select
 
@@ -627,7 +632,7 @@ Color 14, 4
 Print
 Print "You have made an invalid selection.";
 Color 15
-Print " You need to make a selection by entering a number from 1 to 17."
+Print " You need to make a selection by entering a number from 1 to 18."
 Pause
 GoTo MainMenu
 
@@ -1171,7 +1176,7 @@ For IndexCountLoop = 1 To TotalFiles
         End Select
         If IndexRange$ = "1-1" Then IndexRange$ = "1"
     End If
-    Kill "WIM_Info.txt"
+    Kill "Image_Info.txt"
 
     ProcessRange:
 
@@ -1191,7 +1196,7 @@ For IndexCountLoop = 1 To TotalFiles
 
     End If
 
-    ' We will now get WIM info and save it to a file called WIM_Info.txt. We will parse that file to verify that the index
+    ' We will now get image info and save it to a file called Image_Info.txt. We will parse that file to verify that the index
     ' selected is valid. If not, we will ask the user to choose a valid index.
 
     SourcePath$ = FolderArray$(IndexCountLoop) + FileArray$(IndexCountLoop)
@@ -1208,7 +1213,7 @@ For IndexCountLoop = 1 To TotalFiles
     For x = 1 To TotalNumsInArray
         WimInfoFound = 0 ' Init Variable
         DualArchitectureFlag$ = ""
-        Open "WIM_Info.txt" For Input As #1
+        Open "Image_Info.txt" For Input As #1
         Do
             Line Input #1, WimInfo$
             If (InStr(WimInfo$, "x86 Editions")) Then DualArchitectureFlag$ = "x86_DUAL"
@@ -1253,7 +1258,7 @@ For IndexCountLoop = 1 To TotalFiles
             IndexList(IndexCountLoop, y) = RangeArray(y)
         Next y
     Next x
-    Kill "WIM_Info.txt"
+    Kill "Image_Info.txt"
 
     NoIndex:
 
@@ -3527,6 +3532,7 @@ Cmd$ = CHR$(34) + OSCDIMGLocation$ + CHR$(34) + " -t" + CurrentTime$ + " -m -o -
  + "\ISO_Files\boot\etfsboot.com" + CHR$(34) + "#pEF,e,b" + CHR$(34) + DestinationFolder$ + "\ISO_Files\efi\microsoft\boot\efisys.bin"_
  + CHR$(34) + " " + CHR$(34) + DestinationFolder$ + "\ISO_Files" + CHR$(34) + " " + CHR$(34) + FinalImageName$ + CHR$(34) +_
  " >> " + CHR$(34) + DestinationFolder$ + "\logs\OSCDIMG.log" + CHR$(34) + " 2>&1"
+
 ff = FreeFile
 Open DestinationFolder$ + "\logs\OSCDIMG.log" For Output As #ff
 Print #ff, Cmd$
@@ -5555,7 +5561,7 @@ For IndexCountLoop = 1 To TotalFiles
         End Select
         If IndexRange$ = "1-1" Then IndexRange$ = "1"
     End If
-    Kill "WIM_Info.txt"
+    Kill "Image_Info.txt"
 
     MMBIProcessRange:
 
@@ -5568,7 +5574,7 @@ For IndexCountLoop = 1 To TotalFiles
         GoTo MMBIGetMyIndexList
     End If
 
-    ' We will now get WIM info and save it to a file called WIM_Info.txt. We will parse that file to verify that the index
+    ' We will now get image info and save it to a file called Image_Info.txt. We will parse that file to verify that the index
     ' selected is valid. If not, we will ask the user to choose a valid index.
 
     SourcePath$ = FolderArray$(IndexCountLoop) + FileArray$(IndexCountLoop)
@@ -5585,7 +5591,7 @@ For IndexCountLoop = 1 To TotalFiles
     For x = 1 To TotalNumsInArray
         WimInfoFound = 0 ' Init Variable
         DualArchitectureFlag$ = ""
-        Open "WIM_Info.txt" For Input As #1
+        Open "Image_Info.txt" For Input As #1
         Do
             Line Input #1, WimInfo$
             If (InStr(WimInfo$, "x86 Editions")) Then DualArchitectureFlag$ = "x86_DUAL"
@@ -5624,7 +5630,7 @@ For IndexCountLoop = 1 To TotalFiles
             IndexList(IndexCountLoop, y) = RangeArray(y)
         Next y
     Next x
-    Kill "WIM_Info.txt"
+    Kill "Image_Info.txt"
 
     MMBINoIndex:
 
@@ -6508,7 +6514,7 @@ End If
 
 ' Verify that the index numbers specified are valid.
 
-' We will now get WIM info and save it to a file called WIM_Info.txt. We will parse that file to verify that the indices
+' We will now get image info and save it to a file called Image_Info.txt. We will parse that file to verify that the indices
 ' selected are valid. If not, we will ask the user to choose a valid index.
 
 Print
@@ -6543,7 +6549,7 @@ Highest_Single = 0
 Highest_x86 = 0
 Highest_x64 = 0
 
-Open "WIM_Info.txt" For Input As #1
+Open "Image_Info.txt" For Input As #1
 
 Select Case FileSourceType$
     Case "DUAL"
@@ -6571,10 +6577,10 @@ Select Case FileSourceType$
         Highest_Single = Val(Temp$)
 End Select
 
-' Close and delete the WIM_Info.txt file since we are now done using it
+' Close and delete the Image_Info.txt file since we are now done using it
 
 Close #1
-Kill "WIM_Info.txt"
+Kill "Image_Info.txt"
 
 ' Initialize variable
 
@@ -6864,9 +6870,277 @@ Pause
 ChDir ProgramStartDir$: GoTo BeginProgram
 
 
-' ***************************************************************************************************
-' * Get WIM info - display basic info for each WIM in an ISO image and display Windows build number *
-' ***************************************************************************************************
+' **************************************************************************
+' * Convert an image with an install.esd into an image with an install.wim *
+' **************************************************************************
+
+ConvertEsdToWim:
+
+_ConsoleTitle "WIM Tools Version " + ProgramVersion$ + " - Convert install.esd to install.wim"
+
+Source$ = "" ' Set an initial value for the source file path
+
+Do
+    Cls
+    Input "Please enter the complete path to the Windows image file to be converted: ", Source$
+Loop While Source$ = ""
+
+CleanPath Source$
+Source$ = Temp$
+
+If Not _FileExists(Source$) Then GoTo ConvertEsdToWim
+
+GetDestinationPath_ESDtoWIM:
+
+DestinationFolder$ = "" ' Set an initial valye for the destination path
+
+Do
+    Cls
+    Print "Enter the path where the project will be created. This is where all the temporary files will be stored and we will"
+    Print "save the final ISO image file here as well."
+    Print
+    Input "Enter the path where the project should be created: ", DestinationFolder$
+Loop While DestinationFolder$ = ""
+
+CleanPath DestinationFolder$
+DestinationFolder$ = Temp$
+
+FinalImageName$ = "" ' Set initial value for the final image name
+
+Do
+    Cls
+    Input "Enter a name for the final image (without an extension): ", FinalImageName$
+Loop While FinalImageName$ = ""
+
+FinalImageName$ = DestinationFolder$ + "\" + FinalImageName$ + ".iso"
+
+' Check to see if the destination specified is on a removable disk
+
+Cls
+Print "Performing a check to see if the destination you specified is a removable disk."
+Print
+Print "Please standby..."
+DriveLetter$ = Left$(DestinationFolder$, 2)
+RemovableDiskCheck DriveLetter$
+DestinationIsRemovable = IsRemovable
+
+Select Case DestinationIsRemovable
+    Case 2
+        Cls
+        Color 14, 4: Print "This is not a valid disk.";: Color 15: Print " Please specify another location."
+        Pause
+        GoTo GetDestinationPath_ESDtoWIM
+    Case 1
+        Cls
+        Print "The disk that you specified is a removable disk. ";: Color 14, 4: Print "Please specify a fixed disk.": Color 15
+        Print
+        Print "NOTE: Project must be created on a fixed disk due to limitations of some Microsoft utilities."
+        Pause
+        GoTo GetDestinationPath_ESDtoWIM
+    Case 0
+        ' if the returned value was a 0, no action is necessary. The program will continue normally.
+End Select
+
+' Verify that the path specified exists.
+
+If Not (_DirExists(DestinationFolder$)) Then
+
+    ' The destination path does not exist. We will now attempt to create it.
+
+    Cmd$ = "md " + Chr$(34) + DestinationFolder$ + Chr$(34)
+    Shell _Hide Cmd$
+    Cmd$ = "md " + Chr$(34) + DestinationFolder$ + "\logs" + Chr$(34)
+    Shell _Hide Cmd$
+
+
+    ' Checking for existance of folder again again to see if we were able to create it.
+
+    If Not (_DirExists(DestinationFolder$)) Then
+        Cls
+        Color 14, 4: Print "The destination does not exist and we were not able to create the destination folder.": Color 15
+        Print
+        Print "Please recheck the path you have specified and try again."
+        Pause
+        GoTo GetDestinationPath_ESDtoWIM
+    End If
+End If
+
+' If we have arrived here it means that the destination path already exists
+' or we were able to create it successfully.
+
+' Perform a cleanup of the destination path
+
+Cmd$ = "rmdir " + Chr$(34) + DestinationFolder$ + "\ISO_Files" + Chr$(34) + " /s /q"
+Shell _Hide Cmd$
+Cls
+Print "Copying files from the ISO image. This may take a little while."
+Print
+Print "Please standby..."
+
+MountISO Source$
+Shell "md " + Chr$(34) + DestinationFolder$ + "\ISO_Files" + Chr$(34)
+Cmd$ = "robocopy " + MountedImageDriveLetter$ + "\ " + Chr$(34) + DestinationFolder$ + "\ISO_Files" + Chr$(34) + " /mir /a-:rsh /njh /njs"
+Shell _Hide Cmd$
+
+' The next command dismounts the ISO image since we are now done with it. The messages displayed by the process are
+' not really helpful so we are going to hide those messages even if detailed status is selected by the user.
+
+Cmd$ = "powershell.exe -command " + Chr$(34) + "Dismount-DiskImage " + Chr$(34) + "'" + Source$ + "'" + Chr$(34) + Chr$(34)
+Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
+
+' Determine if the source is a single architecture or dual architecture and set the variable ImageArchitecture$ accordingly
+
+If _DirExists(DestinationFolder$ + "\ISO_Files\x64") Then
+    ImageArchitecture$ = "DUAL"
+Else
+    ImageArchitecture$ = "SINGLE"
+End If
+
+Select Case ImageArchitecture$
+    Case "SINGLE"
+
+        x = 0 ' Set an initial value. This variable is used as a simple counter.
+
+        Do
+            Cls
+            x = x + 1
+            Print "Looking for index"; x; "and exporting if it exists"
+
+            If x = 1 Then
+                Print "NOTE: Index 1 takes longer to export than those that follow it."
+            End If
+
+            Index$ = LTrim$(Str$(x))
+            Cmd$ = "DISM /Export-Image /SourceImageFile:" + Chr$(34) + DestinationFolder$ + "\ISO_Files\Sources\install.esd"_
+             + Chr$(34) + " /SourceIndex:" + Index$ + " /DestinationImageFile:" + Chr$(34) + DestinationFolder$_
+              + "\ISO_Files\Sources\install.wim" + Chr$(34) + " /Compress:Max /CheckIntegrity"_
+               + " > " + Chr$(34) + TempLocation$ + "\ESD_Export_Status.txt" + Chr$(34)
+            Cmd$ = Chr$(34) + Cmd$ + Chr$(34)
+            Shell Cmd$
+            ff = FreeFile
+            Open TempLocation$ + "\ESD_Export_Status.txt" For Binary As #ff
+            FileContents$ = Space$(LOF(ff))
+            Get #ff, 1, FileContents$
+            Close #ff
+            If InStr(FileContents$, "Error: 87") Then
+                GoTo ExportsDone
+            End If
+        Loop
+
+    Case "DUAL"
+
+        x = 0 ' Set an initial value. This variable is used as a simple counter.
+
+        Do
+            Cls
+            x = x + 1
+            Print "Looking for x64 index"; x; "and exporting if it exists"
+
+            If x = 1 Then
+                Print "NOTE: Index 1 takes longer to export than those that follow it."
+            End If
+
+            Index$ = LTrim$(Str$(x))
+            Cmd$ = "DISM /Export-Image /SourceImageFile:" + Chr$(34) + DestinationFolder$ + "\ISO_Files\x64\Sources\install.esd"_
+             + Chr$(34) + " /SourceIndex:" + Index$ + " /DestinationImageFile:" + Chr$(34) + DestinationFolder$_
+              + "\ISO_Files\x64\Sources\install.wim" + Chr$(34) + " /Compress:Max /CheckIntegrity"_
+               + " > " + Chr$(34) + TempLocation$ + "\ESD_Export_Status.txt" + Chr$(34)
+            Cmd$ = Chr$(34) + Cmd$ + Chr$(34)
+            Shell Cmd$
+            ff = FreeFile
+            Open TempLocation$ + "\ESD_Export_Status.txt" For Binary As #ff
+            FileContents$ = Space$(LOF(ff))
+            Get #ff, 1, FileContents$
+            Close #ff
+            If InStr(FileContents$, "Error: 87") Then
+                GoTo Export_x64_Done
+            End If
+        Loop
+
+        Export_x64_Done:
+
+        x = 0 ' Set an initial value. This variable is used as a simple counter.
+
+        Do
+            Cls
+            x = x + 1
+            Print "Looking for x86 index"; x; "and exporting if it exists"
+
+            If x = 1 Then
+                Print "NOTE: Index 1 takes longer to export than those that follow it."
+            End If
+
+            Index$ = LTrim$(Str$(x))
+            Cmd$ = "DISM /Export-Image /SourceImageFile:" + Chr$(34) + DestinationFolder$ + "\ISO_Files\x86\Sources\install.esd"_
+             + Chr$(34) + " /SourceIndex:" + Index$ + " /DestinationImageFile:" + Chr$(34) + DestinationFolder$_
+              + "\ISO_Files\x86\Sources\install.wim" + Chr$(34) + " /Compress:Max /CheckIntegrity"_
+               + " > " + Chr$(34) + TempLocation$ + "\ESD_Export_Status.txt" + Chr$(34)
+            Cmd$ = Chr$(34) + Cmd$ + Chr$(34)
+            Shell Cmd$
+            ff = FreeFile
+            Open TempLocation$ + "\ESD_Export_Status.txt" For Binary As #ff
+            FileContents$ = Space$(LOF(ff))
+            Get #ff, 1, FileContents$
+            Close #ff
+            If InStr(FileContents$, "Error: 87") Then
+                GoTo ExportsDone
+            End If
+        Loop
+End Select
+
+ExportsDone:
+
+Kill TempLocation$ + "\ESD_Export_Status.txt"
+
+Select Case ImageArchitecture$
+    Case "SINGLE"
+        Kill DestinationFolder$ + "\ISO_Files\Sources\install.esd"
+    Case "DUAL"
+        Kill DestinationFolder$ + "\ISO_Files\x64\Sources\install.esd"
+        Kill DestinationFolder$ + "\ISO_Files\x86\Sources\install.esd"
+End Select
+
+Cls
+Print "Creating final image."
+Print
+Print "Please standby..."
+
+' Delay creation of the final image if we are within 2 seconds of midnight. This will prevent a possible situation
+' where we grab the date, the time crosses midnight, and then we grab the time which is actually in a new day.
+
+Do
+    _Limit 10
+    CurrentTime$ = Date$ + "," + Left$(Time$, 5)
+    Select Case Right$(CurrentTime$, 8)
+        Case "23:59:58", "23:59:59"
+            Midnight = 1
+        Case Else
+            Midnight = 0
+    End Select
+Loop While Midnight = 1
+
+Cmd$ = Chr$(34) + OSCDIMGLocation$ + Chr$(34) + " -t" + CurrentTime$ + " -m -o -u2 -udfver102 -bootdata:2#p0,e,b" + Chr$(34) + DestinationFolder$_
+ + "\ISO_Files\boot\etfsboot.com" + Chr$(34) + "#pEF,e,b" + Chr$(34) + DestinationFolder$ + "\ISO_Files\efi\microsoft\boot\efisys.bin"_
+ + Chr$(34) + " " + Chr$(34) + DestinationFolder$ + "\ISO_Files" + Chr$(34) + " " + Chr$(34) + FinalImageName$ + Chr$(34) + " >> " + CHR$(34) + DestinationFolder$ +"\logs\OSCDIMG.log" + CHR$(34) + " 2>&1"
+Shell Chr$(34) + Cmd$ + Chr$(34)
+
+' We are done with the ISO_Files folder that we used to temporarily store the Windows image files. Delete it.
+
+Cmd$ = "rmdir " + Chr$(34) + DestinationFolder$ + "\ISO_Files" + Chr$(34) + " /s /q"
+Shell _Hide Cmd$
+
+' We are finished. Let the user know that we are done.
+
+Cls
+Print
+Color 0, 10: Print "All processes have been completed.": Color 15
+Pause
+ChDir ProgramStartDir$: GoTo BeginProgram
+
+
+' *********************************************************************************************************
+' * Get image info - display basic info for each edition in an ISO image and display Windows build number *
+' *********************************************************************************************************
 
 GetWimInfo:
 
@@ -6888,14 +7162,14 @@ End If
 
 GetWimInfo_Main SourcePath$, 0
 
-' Display WIM_Info.txt which lists all of the indicies, then delete it if user no longer needs it.
+' Display Image_Info.txt which lists all of the indicies, then delete it if user no longer needs it.
 
 Cls
-DisplayFile "WIM_Info.txt"
+DisplayFile "Image_Info.txt"
 
 AskToSaveWimInfo1:
 Cls
-Print "A copy of the information just displayed can be saved to a file named WIM_Info.txt in the same location"
+Print "A copy of the information just displayed can be saved to a file named Image_Info.txt in the same location"
 Print "where this program is located so that you can refer to it if needed."
 Print
 Input "Do you want to save that file now"; Temp$
@@ -6909,15 +7183,15 @@ If Temp$ = "X" Then
 End If
 
 If Temp$ = "N" Then
-    Kill "WIM_Info.txt"
+    Kill "Image_Info.txt"
 End If
 
 If Temp$ = "Y" Then
-    Shell Chr$(34) + "move WIM_Info.txt " + Chr$(34) + ProgramStartDir$ + Chr$(34) + " > NUL" + Chr$(34)
+    Shell Chr$(34) + "move Image_Info.txt " + Chr$(34) + ProgramStartDir$ + Chr$(34) + " > NUL" + Chr$(34)
     Cls
     Print "The file has been saved as:"
     Print
-    Color 10: Print ProgramStartDir$; "\WIM_Info.txt": Color 15
+    Color 10: Print ProgramStartDir$; "\Image_Info.txt": Color 15
     Pause
 End If
 
@@ -7068,7 +7342,7 @@ Do
         AskToSaveWimInfo5:
 
         Cls
-        Print "A copy of the information just displayed can be saved to a file named WIM_Info.txt in the same location"
+        Print "A copy of the information just displayed can be saved to a file named Image_Info.txt in the same location"
         Print "where this program is located so that you can refer to it if needed."
         Print
         Input "Do you want to save that file now"; Temp$
@@ -7080,10 +7354,10 @@ Do
             GoTo AskToSaveWimInfo5
         End If
         If Temp$ = "N" Then
-            Kill "WIM_Info.txt"
+            Kill "Image_Info.txt"
         End If
         If Temp$ = "Y" Then
-            Shell Chr$(34) + "move WIM_Info.txt " + Chr$(34) + ProgramStartDir$ + Chr$(34) + " > NUL" + Chr$(34)
+            Shell Chr$(34) + "move Image_Info.txt " + Chr$(34) + ProgramStartDir$ + Chr$(34) + " > NUL" + Chr$(34)
         End If
         Cls
     End If
@@ -7716,8 +7990,8 @@ GetIndexforVHDDeploy:
 
 Cls
 Print "Please enter an index number. If you need to determine what index number is associated with the edition of Windows"
-Print "that you want to apply to the VHD, then cancel out of this routine and run the option "; Chr$(34); "Get WIM info - display basic"
-Print "info for each WIM in an ISO image"; Chr$(34); " from the main menu."
+Print "that you want to apply to the VHD, then cancel out of this routine and run the option "; Chr$(34); "Get image info - display basic"
+Print "info for each edition in an ISO image"; Chr$(34); " from the main menu."
 Print
 Input "Enter the index number: ", Index$
 
@@ -8011,19 +8285,18 @@ Color 0, 10
 Locate 3, 50
 Print " Program Help Menu ";
 Locate 7, 1
-Color 0, 13
-Print "    1) Get general help on the use of this program                                                              "
 Color 0, 14
-Print "    2) Inject Windows updates into one or more Windows editions and create a multi edition bootable image       "
-Print "    3) Inject drivers into one or more Windows editions and create a multi edition bootable image               "
-Print "    4) Inject boot-critical drivers into one or more Windows editions and create a multi edition bootable image "
+Print "    1) Inject Windows updates into one or more Windows editions and create a multi edition bootable image       "
+Print "    2) Inject drivers into one or more Windows editions and create a multi edition bootable image               "
+Print "    3) Inject boot-critical drivers into one or more Windows editions and create a multi edition bootable image "
 Color 0, 10
-Print "    5) Make or update a bootable drive from a Windows ISO image                                                 "
-Print "    6) Create a bootable Windows ISO image that can include multiple editions                                   "
-Print "    7) Create a bootable ISO image from Windows files in a folder                                               "
-Print "    8) Reorganize the contents of a Windows ISO image                                                           "
+Print "    4) Make or update a bootable drive from a Windows ISO image                                                 "
+Print "    5) Create a bootable Windows ISO image that can include multiple editions                                   "
+Print "    6) Create a bootable ISO image from Windows files in a folder                                               "
+Print "    7) Reorganize the contents of a Windows ISO image                                                           "
+Print "    8) Convert an image with an install.esd into an image with an install.wim                                   "
 Color 0, 3
-Print "    9) Get WIM info - display basic info for each WIM in an ISO image and display Windows build number          "
+Print "    9) Get image info - display basic info for each edition in an ISO image and display Windows build number    "
 Print "   10) Modify the NAME and DESCRIPTION values for entries in a WIM file                                         "
 Color 0, 6
 Print "   11) Export drivers from this system                                                                          "
@@ -8035,28 +8308,30 @@ Print "   16) Cleanup files and folders                                         
 Color 0, 8
 Print "   17) Exit                                                                                                     "
 Color 0, 13
-Print "   18) Exit help and return to main menu                                                                        "
+Print "   18) Get general help on the use of this program                                                              "
+Color 0, 15
+Print "   19) Exit help and return to main menu                                                                        "
 Locate 27, 0
 Color 15
-Input "   Please select the item you would like help with by entering its number (18 returns to the main menu): ", MenuSelection
+Input "   Please select the item you would like help with by entering its number (19 returns to the main menu): ", MenuSelection
 
 Select Case MenuSelection
     Case 1
-        GoTo GeneralHelp
-    Case 2
         GoTo HelpInjectUpdates
-    Case 3
+    Case 2
         GoTo HelpInjectDrivers
-    Case 4
+    Case 3
         GoTo HelpInjectBCD
-    Case 5
+    Case 4
         GoTo HelpMakeMultiBootImage
-    Case 6
+    Case 5
         GoTo HelpMakeBootDisk2
-    Case 7
+    Case 6
         GoTo HelpCreateBootableISOFromFiles
-    Case 8
+    Case 7
         GoTo HelpChangeOrder
+    Case 8
+        GoTo HelpConvertEsd
     Case 9
         GoTo HelpGetWimInfo
     Case 10
@@ -8076,6 +8351,8 @@ Select Case MenuSelection
     Case 17
         GoTo HelpExit
     Case 18
+        GoTo GeneralHelp
+    Case 19
         ChDir ProgramStartDir$: GoTo BeginProgram
 End Select
 
@@ -8086,7 +8363,7 @@ Color 14, 4
 Print
 Print "You have made an invalid selection.";
 Color 15
-Print " You need to make a selection by entering a number from 1 to 18."
+Print " You need to make a selection by entering a number from 1 to 19."
 Pause
 GoTo ProgramHelp
 
@@ -9013,7 +9290,35 @@ Print "the Windows editions, editions of Windows can be entirely removed from th
 Pause
 GoTo ProgramHelp
 
-' Help Topic: Get WIM info - display basic info for each WIM in an ISO image and display Windows build number
+' Help Topic: Convert an image with an install.esd into an image with an install.wim
+
+HelpConvertEsd:
+
+Color 15
+Cls
+Color 0, 9
+Print
+Print " Windows Image Manager (WIM) Tools "
+Print " Dual Architecture Edition         "
+Print " Version "; ProgramVersion$; "                "
+Print " Released "; ProgramReleaseDate$; "             "
+Color 0, 10
+Locate 3, 38
+Print " Program Help - Convert an image with an install.esd ";
+Locate 4, 38
+Print "                into an image with an install.wim    ";
+Locate 9, 1
+Color 15
+Print "Most routines in this program require Windows images that contain an install.wim file. However, it's possible that"
+Print "you may only have an image with an install.esd file. These files are smaller, so they are a good choice for"
+Print "distribution over the internet, but they cannot be used to service the images."
+Print
+Print "This routine will convert an image with an install.wim file into an image with an install.esd file. You can then"
+Print "use that image for servicing (injecting updates, drivers, etc.)."
+Pause
+GoTo ProgramHelp
+
+' Help Topic: Get image info - display basic info for each edition in an ISO image and display Windows build number
 
 HelpGetWimInfo:
 
@@ -9027,9 +9332,9 @@ Print " Version "; ProgramVersion$; "                "
 Print " Released "; ProgramReleaseDate$; "             "
 Color 0, 10
 Locate 3, 38
-Print " Program Help - Get WIM info - display basic info for each WIM in an ISO image ";
+Print " Program Help - Get image info - display basic info for each edition in an ISO ";
 Locate 4, 38
-Print "                and display Windows build number                               ";
+Print "                image and display Windows build number                         ";
 Locate 9, 1
 Color 15
 Print "There are times where it may be necessary to know what index number is associated with a particular Windows edition,"
@@ -9264,11 +9569,11 @@ System
 DisplayIndices2:
 
 ' Display a list of Windows editions and associated indices in the selected image file
-' Note that this routine creates a file called WIM_Info.txt. If you don't need it after
+' Note that this routine creates a file called Image_Info.txt. If you don't need it after
 ' a return from this subroutine, make sure to delete it.
 '
 ' NOTE: Before calling the subroutine, set Silent$ to "Y" or "N". If set to "Y" then the routine will
-' run silently. In other words, it save results to the WIM_Info.txt file but will not display it.
+' run silently. In other words, it save results to the Image_Info.txt file but will not display it.
 
 If Silent$ = "N" Then
     Cls
@@ -9281,19 +9586,19 @@ End If
 
 MountISO SourcePath$
 
-Shell "echo File Name: " + Mid$(SourcePath$, _InStrRev(SourcePath$, "\") + 1) + " > WIM_Info.txt"
-Shell "echo. >> WIM_Info.txt"
-Shell "echo ***************************************************************************************************** >> WIM_Info.txt"
-Shell "echo * Below is the list of Windows editions and associated indicies available for the above named file. * >> WIM_Info.txt"
-Shell "echo ***************************************************************************************************** >> WIM_Info.txt"
-Shell "echo. >> WIM_Info.txt"
+Shell "echo File Name: " + Mid$(SourcePath$, _InStrRev(SourcePath$, "\") + 1) + " > Image_Info.txt"
+Shell "echo. >> Image_Info.txt"
+Shell "echo ***************************************************************************************************** >> Image_Info.txt"
+Shell "echo * Below is the list of Windows editions and associated indicies available for the above named file. * >> Image_Info.txt"
+Shell "echo ***************************************************************************************************** >> Image_Info.txt"
+Shell "echo. >> Image_Info.txt"
 
 If ArchitectureChoice$ <> "" Then
-    Shell "echo. >> WIM_Info.txt"
-    Shell "echo **************** >> WIM_Info.txt"
-    Shell "echo * " + Right$(ArchitectureChoice$, 3) + " Editions * >> WIM_Info.txt"
-    Shell "echo **************** >> WIM_Info.txt"
-    Shell "echo. >> WIM_Info.txt"
+    Shell "echo. >> Image_Info.txt"
+    Shell "echo **************** >> Image_Info.txt"
+    Shell "echo * " + Right$(ArchitectureChoice$, 3) + " Editions * >> Image_Info.txt"
+    Shell "echo **************** >> Image_Info.txt"
+    Shell "echo. >> Image_Info.txt"
 End If
 
 ' The lines below test to see if this image has an install.esd or an install.wim and runs the appropriate command.
@@ -9302,9 +9607,9 @@ End If
 InstallFileTest$ = MountedImageDriveLetter$ + ArchitectureChoice$ + "\sources\install.wim"
 
 If _FileExists(InstallFileTest$) Then
-    InstallFile$ = "\sources\install.wim >> WIM_Info.txt"
+    InstallFile$ = "\sources\install.wim >> Image_Info.txt"
 Else
-    InstallFile$ = "\sources\install.esd >> WIM_Info.txt"
+    InstallFile$ = "\sources\install.esd >> Image_Info.txt"
 End If
 
 Cmd$ = "dism /Get-WimInfo /WimFile:" + MountedImageDriveLetter$ + ArchitectureChoice$ + InstallFile$
@@ -9315,11 +9620,11 @@ Shell Cmd$
 Cmd$ = "powershell.exe -command " + Chr$(34) + "Dismount-DiskImage " + Chr$(34) + "'" + SourcePath$ + "'" + Chr$(34) + Chr$(34)
 Shell _Hide Cmd$
 
-' Display WIM_Info.txt which lists all of the indicies
+' Display Image_Info.txt which lists all of the indicies
 
 If Silent$ = "N" Then
     Cls
-    DisplayFile "WIM_Info.txt"
+    DisplayFile "Image_Info.txt"
 End If
 
 Return
@@ -10671,12 +10976,12 @@ End Sub
 
 Sub GetWimInfo_Main (SourcePath$, GetWimInfo_Silent)
 
-    ' This routine will save WIM info to a text file called WIM_Info.txt located in the same
+    ' This routine will save WIM info to a text file called Image_Info.txt located in the same
     ' folder that the program is run from. This routine can be run with status information or
     ' silently. Pass to this routine the name of the ISO image for which to get info in a
     ' string and a 0 or 1 to indicate silent mode (0 = run normally, 1 = run silent).
     '
-    ' If you no longer need the file WIM_Info.txt, make sure to delete it after a return from
+    ' If you no longer need the file Image_Info.txt, make sure to delete it after a return from
     ' this routine.
 
     ' Declare local variables
@@ -10693,12 +10998,12 @@ Sub GetWimInfo_Main (SourcePath$, GetWimInfo_Silent)
     Dim X As Integer ' Temporary value used for manipulation of string
     Dim Y As Integer ' Temporary value used for manipulation of string
 
-    Shell "echo File Name: " + Mid$(SourcePath$, _InStrRev(SourcePath$, "\") + 1) + " > WIM_Info.txt"
-    Shell "echo. >> WIM_Info.txt"
-    Shell "echo ***************************************************************************************************** >> WIM_Info.txt"
-    Shell "echo * Below is the list of Windows editions and associated indicies available for the above named file. * >> WIM_Info.txt"
-    Shell "echo ***************************************************************************************************** >> WIM_Info.txt"
-    Shell "echo. >> WIM_Info.txt"
+    Shell "echo File Name: " + Mid$(SourcePath$, _InStrRev(SourcePath$, "\") + 1) + " > Image_Info.txt"
+    Shell "echo. >> Image_Info.txt"
+    Shell "echo ***************************************************************************************************** >> Image_Info.txt"
+    Shell "echo * Below is the list of Windows editions and associated indicies available for the above named file. * >> Image_Info.txt"
+    Shell "echo ***************************************************************************************************** >> Image_Info.txt"
+    Shell "echo. >> Image_Info.txt"
 
     ' Determine if the file specified holds a dual architecture installation
     ' Unlike the routine for creating a multiboot disk, in this case we only
@@ -10728,42 +11033,55 @@ Sub GetWimInfo_Main (SourcePath$, GetWimInfo_Silent)
     End If
 
     If Architecture$ = "SINGLE" Then
-        Shell "echo *************************************** >> WIM_Info.txt"
-        Shell "echo * This is a single architecture image * >> WIM_Info.txt"
-        Shell "echo *************************************** >> WIM_Info.txt"
-        Shell "echo. >> WIM_Info.txt"
-        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Get-WimInfo /WimFile:" + Chr$(34) + MountedImageDriveLetter$ + "\sources\install.wim" + Chr$(34) + " /index:1 > WIM_Info2.txt"
+        Shell "echo *************************************** >> Image_Info.txt"
+        Shell "echo * This is a single architecture image * >> Image_Info.txt"
+        Shell "echo *************************************** >> Image_Info.txt"
+        Shell "echo. >> Image_Info.txt"
+
+        ' The lines below test to see if this image has an install.esd or an install.wim and runs the appropriate command.
+        ' Normally, we should not need this. Only an install.wim should be present for this project, but this routine can handle either.
+
+        InstallFileTest$ = MountedImageDriveLetter$ + "\sources\install.wim"
+
+        If _FileExists(InstallFileTest$) Then
+            InstallFile$ = "\sources\install.wim"
+        Else
+            InstallFile$ = "\sources\install.esd"
+        End If
+
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Get-WimInfo /WimFile:" + Chr$(34) + MountedImageDriveLetter$ + InstallFile$ + Chr$(34) + " /index:1 > WIM_Info2.txt"
         Shell Chr$(34) + Cmd$ + Chr$(34)
         GoSub DetermineBuild
-        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Get-WimInfo /WimFile:" + Chr$(34) + MountedImageDriveLetter$ + "\sources\install.wim" + Chr$(34) + " >> WIM_Info.txt"
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Get-WimInfo /WimFile:" + Chr$(34) + MountedImageDriveLetter$ + InstallFile$ + Chr$(34) + " >> Image_Info.txt"
         Shell Chr$(34) + Cmd$ + Chr$(34)
     Else
-        Shell "echo ************************************* >> WIM_Info.txt"
-        Shell "echo * This is a dual architecture image * >> WIM_Info.txt"
-        Shell "echo ************************************* >> WIM_Info.txt"
-        Shell "echo. >> WIM_Info.txt"
-        Shell "echo     **************** >> WIM_Info.txt"
-        Shell "echo     * x86 Editions * >> WIM_Info.txt"
-        Shell "echo     **************** >> WIM_Info.txt"
-        Shell "echo. >> WIM_Info.txt"
+        Shell "echo ************************************* >> Image_Info.txt"
+        Shell "echo * This is a dual architecture image * >> Image_Info.txt"
+        Shell "echo ************************************* >> Image_Info.txt"
+        Shell "echo. >> Image_Info.txt"
+        Shell "echo     **************** >> Image_Info.txt"
+        Shell "echo     * x86 Editions * >> Image_Info.txt"
+        Shell "echo     **************** >> Image_Info.txt"
+        Shell "echo. >> Image_Info.txt"
 
         ' The lines below test to see if this dual architecture image has an install.esd or an install.wim and runs the appropriate command.
         ' Normally, we should not need this. Only an install.wim should be present for this project, but this routine can handle either.
 
         InstallFileTest$ = MountedImageDriveLetter$ + "\x86\sources\install.wim"
+
         If _FileExists(InstallFileTest$) Then
             InstallFile$ = "\x86\sources\install.wim"
         Else
             InstallFile$ = "\x86\sources\install.esd"
         End If
 
-        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Get-WimInfo /WimFile:" + Chr$(34) + MountedImageDriveLetter$ + InstallFile$ + Chr$(34) + " >> WIM_Info.txt"
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Get-WimInfo /WimFile:" + Chr$(34) + MountedImageDriveLetter$ + InstallFile$ + Chr$(34) + " >> Image_Info.txt"
         Shell Chr$(34) + Cmd$ + Chr$(34)
-        Shell "echo. >> WIM_Info.txt"
-        Shell "echo     **************** >> WIM_Info.txt"
-        Shell "echo     * x64 Editions * >> WIM_Info.txt"
-        Shell "echo     **************** >> WIM_Info.txt"
-        Shell "echo. >> WIM_Info.txt"
+        Shell "echo. >> Image_Info.txt"
+        Shell "echo     **************** >> Image_Info.txt"
+        Shell "echo     * x64 Editions * >> Image_Info.txt"
+        Shell "echo     **************** >> Image_Info.txt"
+        Shell "echo. >> Image_Info.txt"
 
         ' The lines below test to see if this dual architecture image has an install.esd or an install.wim and runs the appropriate command.
         ' Normally, we should not need this. Only an install.wim should be present for this project, but this routine can handle either.
@@ -10776,7 +11094,7 @@ Sub GetWimInfo_Main (SourcePath$, GetWimInfo_Silent)
         Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Get-WimInfo  /WimFile:" + Chr$(34) + MountedImageDriveLetter$ + InstallFile$ + Chr$(34) + " /index:1 > WIM_Info2.txt"
         Shell Chr$(34) + Cmd$ + Chr$(34)
         GoSub DetermineBuild
-        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Get-WimInfo  /WimFile:" + Chr$(34) + MountedImageDriveLetter$ + InstallFile$ + Chr$(34) + " >> WIM_Info.txt"
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Get-WimInfo  /WimFile:" + Chr$(34) + MountedImageDriveLetter$ + InstallFile$ + Chr$(34) + " >> Image_Info.txt"
         Shell Chr$(34) + Cmd$ + Chr$(34)
     End If
 
@@ -10814,15 +11132,15 @@ Sub GetWimInfo_Main (SourcePath$, GetWimInfo_Silent)
     Y = _InStrRev(X, A$, ":") + 2
     SP_Build$ = Mid$(A$, Y, ((X - Y) - 2))
 
-    Shell "echo *********************************************************************** >> WIM_Info.txt"
-    Shell "echo * The Windows editions in this image have the following build number: * >> WIM_Info.txt"
+    Shell "echo *********************************************************************** >> Image_Info.txt"
+    Shell "echo * The Windows editions in this image have the following build number: * >> Image_Info.txt"
 
-    Cmd$ = "echo * " + Version$ + "." + SP_Build$ + Space$(68 - ((Len(Version$) + Len(SP_Build$) + 1))) + "* >> WIM_Info.txt"
+    Cmd$ = "echo * " + Version$ + "." + SP_Build$ + Space$(68 - ((Len(Version$) + Len(SP_Build$) + 1))) + "* >> Image_Info.txt"
     Shell Cmd$
     Shell "echo *                                                                     * >> WIN_Info.txt"
-    Shell "echo * Note: It is assumed that all editions have the same build number    * >> WIM_Info.txt"
-    Shell "echo *********************************************************************** >> WIM_Info.txt"
-    Shell "echo. >> WIM_Info.txt"
+    Shell "echo * Note: It is assumed that all editions have the same build number    * >> Image_Info.txt"
+    Shell "echo *********************************************************************** >> Image_Info.txt"
+    Shell "echo. >> Image_Info.txt"
 
     Return
 
@@ -11998,7 +12316,7 @@ Sub GetNumberOfIndices
     NumberOfx86Indices = 0
     NumberOfx64Indices = 0
     DualArchitectureFlag$ = ""
-    Open "WIM_Info.txt" For Input As #1
+    Open "Image_Info.txt" For Input As #1
     Do
         Line Input #1, WimInfo$
         If (InStr(WimInfo$, "x86 Editions")) And (InStr(WimInfo$, "File Name:") = 0) Then DualArchitectureFlag$ = "x86_DUAL"
@@ -13440,4 +13758,20 @@ End Sub
 '
 ' 19.3.4.197 - March 16, 2022
 ' Very minor changes to wording of some text in help. No functional changes in this update.
+'
+' 19.3.5.198 - March 16, 2022
+' Another minor change: The routine to display Windows image information is one of the few pieces in this program that was intended to be able
+' to handle both images that contain an install.wim file(s) as well as those that use install.esd file(s). This worked fine for dual architecture
+' images, but we were not handling it correctly for single architecture images. This has now been corrected. Along with this change we changed
+' the temporary test file that was used to store information from WIM_Info.txt to Image_Info.txt.
+'
+' 20.0.0.199 - March 18, 2022
+' Major new release: Added a new feature to the menu. There are a lot of people who have ISO images using an install.esd rather than an
+' install.wim. There are occasions where the release of an image with .wim may be delayed by a few days and only the .esd version of the
+' image is available. As a result, we now have the ability to convert an image with an install.esd into an image with an install.wim.
+' This feature supports both single and dual architecture images.
+'
+' 20.0.1.200 - March 19, 2022
+' Revised the help menu so that help topics align with the actual menu item numbers. Previously, the numbers were offset by one. For
+' example, menu item 1 was help topic 2.
 
