@@ -2,6 +2,28 @@
 * Changes in the Current Release *
 **********************************
 
+v20.0.3.202
+
+Bug Fix - Introduced a bug at the last moment before posting of the last release that caused the final image to not be created. This has been fixed. 
+
+
+******************
+* Files affected *
+******************
+
+WIM_Tools.bas - QB64 Source Code
+WIM_Tools.exe - Compiled Executable
+
+The following files are unchanged:
+
+ISO.ico
+WIM Tools User Guide.pdf
+
+
+**********************
+* Previous Releases: *
+**********************
+
 v20.0.1.200
 
 Major new release: 
@@ -11,24 +33,6 @@ New Feature: Added a new feature to the menu. There are a lot of people who have
 This feature supports both single and dual architecture images. Please note that we currently support conversion of the entire ISO image only. Once converted to an image with a .wim, you can use the available routines in this program to create a new image with only the Windows editions that you want / require.
 
 Updated: Revised the help menu so that help topics align with the actual menu item numbers. Previously, the numbers were offset by one. For example, menu item 1 was help topic 2. The help topic numbers now align with the numbers on the main menu precisely to avoid any potential confusion.
-
-
-******************
-* Files affected *
-******************
-
-WIM_Tools.bas - QB64 Source Code
-WIM_Tools.exe - Compiled Executable
-WIM Tools User Guide.pdf
-
-The following files are unchanged:
-
-ISO.ico
-
-
-**********************
-* Previous Releases: *
-**********************
 
 v19.3.4.197
 

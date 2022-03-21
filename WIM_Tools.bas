@@ -18,7 +18,7 @@ Option _Explicit
 Rem $DYNAMIC
 $ExeIcon:'iso.ico'
 $VersionInfo:CompanyName=Hannes Sehestedt
-$VersionInfo:FILEVERSION#=20,0,1,200
+$VersionInfo:FILEVERSION#=20,0,3,202
 $VersionInfo:ProductName=WIM Tools Dual Architecture Edition
 $VersionInfo:LegalCopyright=(c) 2022 by Hannes Sehestedt
 $Console:Only
@@ -88,8 +88,8 @@ End If
 Dim Shared ProgramVersion As String ' Holds the current program version. This is displayed in the console title throughout the program
 Dim ProgramReleaseDate As String
 
-ProgramVersion$ = "20.0.1.200"
-ProgramReleaseDate$ = "Mar 19, 2022"
+ProgramVersion$ = "20.0.3.202"
+ProgramReleaseDate$ = "Mar 21, 2022"
 
 
 ' ******************************************************************************************************************
@@ -6949,9 +6949,6 @@ If Not (_DirExists(DestinationFolder$)) Then
 
     Cmd$ = "md " + Chr$(34) + DestinationFolder$ + Chr$(34)
     Shell _Hide Cmd$
-    Cmd$ = "md " + Chr$(34) + DestinationFolder$ + "\logs" + Chr$(34)
-    Shell _Hide Cmd$
-
 
     ' Checking for existance of folder again again to see if we were able to create it.
 
@@ -7034,7 +7031,9 @@ Select Case ImageArchitecture$
         Do
             Cls
             x = x + 1
-            Print "Looking for x64 index"; x; "and exporting if it exists"
+            Print "This is a dual architecture image"
+            Print
+            Print "Looking for ";: Color 0, 10: Print "x64";: Color 15: Print " index"; x; "and exporting if it exists"
 
             If x = 1 Then
                 Print "NOTE: Index 1 takes longer to export than those that follow it."
@@ -7064,7 +7063,9 @@ Select Case ImageArchitecture$
         Do
             Cls
             x = x + 1
-            Print "Looking for x86 index"; x; "and exporting if it exists"
+            Print "This is a dual architecture image"
+            Print
+            Print "Looking for ";: Color 0, 10: Print "x86";: Color 15: Print " index"; x; "and exporting if it exists"
 
             If x = 1 Then
                 Print "NOTE: Index 1 takes longer to export than those that follow it."
@@ -7121,8 +7122,9 @@ Loop While Midnight = 1
 
 Cmd$ = Chr$(34) + OSCDIMGLocation$ + Chr$(34) + " -t" + CurrentTime$ + " -m -o -u2 -udfver102 -bootdata:2#p0,e,b" + Chr$(34) + DestinationFolder$_
  + "\ISO_Files\boot\etfsboot.com" + Chr$(34) + "#pEF,e,b" + Chr$(34) + DestinationFolder$ + "\ISO_Files\efi\microsoft\boot\efisys.bin"_
- + Chr$(34) + " " + Chr$(34) + DestinationFolder$ + "\ISO_Files" + Chr$(34) + " " + Chr$(34) + FinalImageName$ + Chr$(34) + " >> " + CHR$(34) + DestinationFolder$ +"\logs\OSCDIMG.log" + CHR$(34) + " 2>&1"
-Shell Chr$(34) + Cmd$ + Chr$(34)
+ + Chr$(34) + " " + Chr$(34) + DestinationFolder$ + "\ISO_Files" + Chr$(34) + " " + Chr$(34) + FinalImageName$ + Chr$(34)
+
+Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
 ' We are done with the ISO_Files folder that we used to temporarily store the Windows image files. Delete it.
 
@@ -8938,17 +8940,11 @@ Print "Setup_DU - Fixes to Setup binaries or any files that Setup uses for featu
 Print "from the Microsoft Update Catalog, the Setup Dynamic Update will indicate Windows 10 Dynamic Update in the Product field"
 Print "and Dynamic Update for Windows 10 in the Title field. Store only one Setup Dynamic Update file in this folder."
 Print
-Print "SSU - The SSU or Servicing Stack Update contains fixes that are necessary to address the Windows 10 servicing stack and"
-Print "is required to complete a feature update. These updates will show Servicing Stack Update in the Title field on the"
-Print "update catalog. Only one SSU update should be stored in this folder."
-Print
 Print "TIP: If you have a new update that you wish the apply to your Windows edition(s) and you already have other updates"
 Print "applied to your Windows edition(s), create an update folder with only the new update(s) and remove the contents of all"
 Print "the other folders. This will cause the updates to be applied faster since the other updates don't have to be parsed to"
-Print "see if their contents have already been applied. For example, if you download a new LCU (Latest Cumulative Update) and"
-Print "you have already previously applied the other available updates such as the SSU, the Other updates category, etc., then"
-Print "you can create a folder with only an LCU subfolder and the LCU placed in that folder. Note that this is not mandatory."
-Print "It is perfectly fine to have updates in your update folders that are already applied, it will simply take longer."
+Print "see if their contents have already been applied. Note that this is not mandatory. It is perfectly fine to have updates"
+Print "in your update folders that are already applied, it will simply take longer."
 Pause
 GoTo HelpInjectUpdates
 
@@ -13774,4 +13770,13 @@ End Sub
 ' 20.0.1.200 - March 19, 2022
 ' Revised the help menu so that help topics align with the actual menu item numbers. Previously, the numbers were offset by one. For
 ' example, menu item 1 was help topic 2.
+'
+' 20.0.2.201 - March 20, 2022
+' Very minor update: In the built-in help, under the topic for the routine that injects drivers into Windows images, on the third page of
+' the help topic "5) Organizing update files", there is a section for "SSU". This topic has been removed since Microsoft has now switched
+' to a combined LCU / SSU model. This means that an SSU folder is no longer needed and a seperate SSU does not need to be downloaded.
+'
+' 20.0.3.202 - March 21, 2022
+' At the last moment prior to compiling the last release, we accidentally introduced a bug causing the final image to not be created in the
+' new routine that converts ESD images into WIM images. This has been fixed.
 
