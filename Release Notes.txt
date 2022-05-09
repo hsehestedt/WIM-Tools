@@ -2,10 +2,21 @@
 * Changes in the Current Release *
 **********************************
 
-v20.0.3.202
+v20.1.2.208
 
-Bug Fix - Introduced a bug at the last moment before posting of the last release that caused the final image to not be created. This has been fixed. 
+Completely revised the logging subsystem to make it simpler. Logs were sometimes being generated that were 600MB+ in size and this was getting out of hand. We have also made one small change to the behavior of the routine that converts ESD files to WIM. Since we are simply performing a conversion and not altering the image in any other way, we are no longer altering the timestamp of files when we create the final ISO image.
 
+Enhanced the auto shutdown capablity by allowing the user to request a hibernation rather than a shutdown. This will better support wake-on-LAN capabilities. Place a file named auto_shutdown.txt on the desktop to perform a shutdown when the program has finished running or an auto_hibernate.txt to hibernate. NOTE: This is used only by the routine to inject updates / drivers / boot-critical drivers into the image since these can be a long running operations.
+
+Made some changes to the program startup. When a new version of the program is run for the first time, we display a message encouraging the review of the online help.
+
+If system settings prevent the code from self-elevating (re-running itself if the program was not run as administrator), we now display a message to the user advising them to re-run the program as administrator.
+
+Bug-fix: When updates were injected into an image using a script, some messages that should be displayed to the user could be skipped. This has been fixed.
+
+Bug-fix: There was a piece of code where a wrong file name was referenced. This caused a minor cosmetic issue, no problem to program functionality was created by this.
+
+Documentation: We are eliminating the PDF documentation with this build. Everything needed is now built into the program itself so it eliminates the need for the separate documentation.
 
 ******************
 * Files affected *
@@ -13,16 +24,21 @@ Bug Fix - Introduced a bug at the last moment before posting of the last release
 
 WIM_Tools.bas - QB64 Source Code
 WIM_Tools.exe - Compiled Executable
+WIM Tools User Guide.pdf (ELIMINATED)
 
 The following files are unchanged:
 
 ISO.ico
-WIM Tools User Guide.pdf
+
 
 
 **********************
 * Previous Releases: *
 **********************
+
+v20.0.3.202
+
+Bug Fix - Introduced a bug at the last moment before posting of the last release that caused the final image to not be created. This has been fixed. 
 
 v20.0.1.200
 

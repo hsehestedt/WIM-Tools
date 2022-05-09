@@ -18,7 +18,7 @@ Option _Explicit
 Rem $DYNAMIC
 $ExeIcon:'iso.ico'
 $VersionInfo:CompanyName=Hannes Sehestedt
-$VersionInfo:FILEVERSION#=20,0,3,202
+$VersionInfo:FILEVERSION#=20,1,3,208
 $VersionInfo:ProductName=WIM Tools Dual Architecture Edition
 $VersionInfo:LegalCopyright=(c) 2022 by Hannes Sehestedt
 $Console:Only
@@ -51,32 +51,6 @@ Dim Temp1 As String ' Temp1$ is for holding temporary data. Don't use long term 
 Dim Temp2 As String ' Same as Temp1$
 Dim x As Integer ' Generic variable reused throughout program, mainly as a counter in FOR ... NEXT loops
 
-' This program needs to be run elevated. Check to see if the program is running elevated, if not,
-' restart in elevated mode and terminate current non-elevated program.
-
-' We need to begin by parsing the original command line for a "'" (single quote) character.
-' If this character exists, it will cause the command to self-elevate the program to fail.
-' We resolve this by changing the single quote character into two single quotes back-to-back.
-' This will "escape" the single quote character in the command.
-
-Temp1$ = Command$(0)
-For x = 1 To Len(Temp1$)
-    If Mid$(Temp1$, x, 1) = "'" Then
-        Temp2$ = Temp2$ + "''"
-    Else
-        Temp2$ = Temp2$ + Mid$(Temp1$, x, 1)
-    End If
-Next x
-
-
-If (_ShellHide(">nul 2>&1 " + Chr$(34) + "%SYSTEMROOT%\system32\cacls.exe" + Chr$(34) + " " + Chr$(34) + "%SYSTEMROOT%\system32\config\system" + Chr$(34))) <> 0 Then
-    Shell "powershell.exe " + Chr$(34) + "Start-Process '" + (Mid$(Temp2$, _InStrRev(Temp2$, "\") + 1)) + "' -Verb runAs" + Chr$(34)
-    System
-End If
-
-' If we reach this point then the program was run elevated.
-
-
 ' ***********************************************************
 ' ***********************************************************
 ' ** The following strings hold the program version number **
@@ -88,8 +62,8 @@ End If
 Dim Shared ProgramVersion As String ' Holds the current program version. This is displayed in the console title throughout the program
 Dim ProgramReleaseDate As String
 
-ProgramVersion$ = "20.0.3.202"
-ProgramReleaseDate$ = "Mar 21, 2022"
+ProgramVersion$ = "20.1.3.208"
+ProgramReleaseDate$ = "May 09, 2022"
 
 
 ' ******************************************************************************************************************
@@ -128,7 +102,9 @@ Dim bcd_ff As Integer ' Holds a free file number for file access to BCD files
 Dim BitLockerCount As Integer ' Stores the number of partitions that need to be encrypted
 Dim CDROM As String ' The drive letter assigned to the mounted ISO image
 Dim ChosenIndex As Integer
+Dim Shared CleanupSuccess As Integer ' Set to 0 if we do not successfully clean contents of folder in the cleanup routine, otherwise set to 1 if we succeed
 Dim Column As Integer ' Used for positioning cursor on screen
+Dim Shared CreateEiCfg As String ' Set to "Y" or "N" to indicate whether an ei.cfg file should be created.
 Dim CurrentImage As Integer ' A counter used to keep track of the image number being processed
 Dim CurrentIndex As String ' A counter used to keep track of the index number within an image being processed
 Dim CurrentIndexCount As Integer
@@ -142,8 +118,12 @@ Dim DestinationFolder As String ' The destination folder where all the folders c
 Dim DestinationIsRemovable As Integer ' Flag to indicate if the originally specified destination is removable
 Dim DestinationPath As String ' The destination path for the ISO image without a file name
 Dim DestinationPathAndFile As String ' The full path including the file name of the ISO image to be created
+Dim Shared DiskDetail(0) As String ' Stores details about each disk in the system
 Dim DiskID As Integer ' Used in multiple places to ask the user for a DiskID as presented by the Microsoft DiskPart utility
+Dim Shared DiskIDList(0) As Integer ' Used to store a list of valid Disk ID numbers
 Dim DiskIDSearchString As String ' Holds a disk ID that will be searched for in the output of diskpart commands
+Dim Shared DISM_Error_Found As String ' Holds a "Y" if an error is found in log file, a "N" if not found.
+Dim Shared DISMLocation As String ' Holds the location of DISM.EXE as reported by the registry
 Dim DisplayUnit As String ' Holds "MB", "GB", or "TB" to indicate what units user is entering partition size in
 Dim DriveLetter As String ' Take a path and store the drive letter from that path (C:, D:, etc.) in this valiable to be used to determine if drive is removable or not
 Dim DST As String ' A path that includes location of install.wim files
@@ -152,15 +132,14 @@ Dim DualArcImagePath As String
 Dim DualBootPackage As Integer
 Dim DUALFileCount As Integer
 Dim EditionName As String
-Dim ErrMsg(4) As String
-Dim ErrMsgFile1 As Long
-Dim ErrMsgFile2 As Long
+Dim Shared ExcludeAutounattend As String ' If set to "Y" then exclude any existing autounattend.xml file, if set to "N" then it is okay to copy the file
 Dim exFATorNTFSdriveletter As String
 Dim ExportFolder As String ' Used by the routine for exporting drivers from a system as well as the Reorg routine.
 Dim FAT32DriveLetter As String ' Letter assigned to 1st partition
 Dim ff As Long ' Holds the value returned by FREEFILE to determine an available file number
 Dim ff2 As Long
 Dim FileContents As String ' Temp copy of output from a DISM command in routine to cvonvert ESD to WIM
+Dim Shared FileCount As Integer ' The number of ISO image files that need to be processed. In multiboot image creation program, this hold the number of images we have to process.
 Dim FileLength As Single
 Dim FileSourceType As String
 Dim FinalImageName As String
@@ -169,7 +148,9 @@ Dim Highest_Single As Integer
 Dim Highest_x64 As Integer
 Dim Highest_x86 As Integer
 Dim IDX As String
+Dim Shared ImageArchitecture As String ' Used by the DetermineArchitecture routine to determine if an ISO image is x86, x64, or dual architecture
 Dim ImageInfo As String
+Dim Shared IMAGEXLocation As String ' The location of the ImageX ADK utility as reported by the registry
 Dim ImagePath As String
 Dim ImageSourceDrive As String
 Dim Index As String ' Holds index number for the image being processed as a string without leading space
@@ -181,8 +162,10 @@ Dim IndexVal As Integer
 Dim InjectionMode As String ' From the main menu, set to "UPDATES" if user wants to inject Windows updates, or "DRIVERS" if user wants to inject drivers.
 Dim InstallFile As String
 Dim InstallFileTest As String
+Dim Shared IsRemovable As Integer ' Value returned subroutine to determine if a disk ID or drive letter passed to it is removable or not
 Dim LCU_Update_Avail As String
 Dim LettersAssigned As Integer
+Dim Shared ListOfDisks As String
 Dim MainLoopCount As Integer ' Counter to indicate which loop we are in.
 Dim MakeBootablePath As String
 Dim MakeBootableSourceISO As String ' The full path and file name of the ISO image that the user want to make a bootable thumb drive from
@@ -193,12 +176,21 @@ Dim MenuSelection As Integer ' Will hold the number of the menu option selected 
 Dim Midnight As Integer ' Just before creating an ISO image, set to "1" if we are within the two seconds prior to midnight, otherwise, set to "0"
 Dim MoreFolders As String
 Dim MountDir As String ' Used to hold text while reading from a file looking for a DISM mount location
+Dim Shared MountedImageCDROMID As String ' The MountISO returns this value
+Dim Shared MountedImageDriveLetter As String ' The MountISO returns this value
 Dim Multiplier As Single
 Dim NameFromFile As String ' Holds the NAME field of an image parsed from Image_Info.txt file
 Dim NewLabel As String
+Dim Shared NumberOfFiles As Integer ' Used by the FileTypeSearch subroutine to keep count of the number of files found in a folder of the type specified by a user
+Dim Shared NumberOfDisks ' Stores the number of disk drives that diskpart sees in the system
+Dim Shared NumberOfSingleIndices As Integer
+Dim Shared NumberOfx64Indices As Integer
+Dim Shared NumberOfx86Indices As Integer
 Dim NumberOfx64Updates As Integer
 Dim NumberOfx86Updates As Integer
+Dim Shared OpsPending As String
 Dim OpsPendingFileCheck As String
+Dim Shared OSCDIMGLocation As String ' Holds the location of OSCDIMG.EXE as reported by the registry
 Dim Other_Updates_Avail As String
 Dim OutputFileName As String ' For Windows multiboot image program, holds the final name of the ISO image to be created (file name and extension only, no path)
 Dim Override As String
@@ -206,15 +198,22 @@ Dim ParSizeInMB As String ' Holds the size of a partition as a string
 Dim Par1InstancesFound As Integer
 Dim Par2InstancesFound As Integer
 Dim PE_Files_Avail As String
+Dim Shared ProgramStartDir As String ' Holds the original starting location of the program
 Dim ProjectArchitecture As String ' In Multiboot program, hold the overall project architecture type (x86, x64, or DUAL)
 Dim ProjectType As String
+ReDim Shared RangeArray(0) As Integer ' Each individual numeric value from the range of numbers passed into the ProcessRangeOfNums routine expanded into individual numbers
 Dim ReadLine As String
 Dim ReorgFileName As String
 Dim ReorgSourcePath As String
 Dim RowEnd As Integer
 Dim Row As Integer ' Used for positioning cursor on screen
 Dim SafeOS_DU_Avail As String
+Dim Shared ScriptingChoice As String ' Used to track what scripting operation user wishes to perform
+Dim Shared ScriptContents As String ' Holds the entire contents of previously created script for playback
+Dim Shared ScriptFile As String ' Used to store the name of the script file to be run
 Dim Setup_DU As String ' Holds the location of the Setup Dynamic update file
+Dim Shared ShutdownStatus As Integer
+Dim Shared Skip_PE_Updates As String ' if Set to "Y" we will not apply SSU and LCU updates to the WinPE (boot.wim) image
 Dim Silent As String
 Dim SingleImageTag As String
 Dim SingleImageCount As Integer
@@ -226,13 +225,17 @@ Dim SourceFolderIsAFile As String ' If SourceFolder$ actually contains a filenam
 Dim SourceImage As String
 Dim SRC As String
 Dim TempLong As Long
+Dim Shared Temp As String ' Temporary string value that can be shared with subroutines and also used elsewhere as temporary storage
+Dim Shared TempLocation As String ' This variable will hold the location of the TEMP directory.
 Dim TempPath As String ' A temporary variable used while manipulating strings
 Dim TempValue As Long
 Dim TotalImages As Integer
 Dim TotalImagesToUpdate As Integer
 Dim TotalIndexCount As Integer
+Dim Shared TotalNumsInArray As Integer
 Dim TotalPartitions As Integer ' The total number of partitions that need to be created on a bootable thumb drive
 Dim TotalSpaceNeeded As Long
+Dim Shared TempArray(100) As String ' Used by FileTypeSearch subroutine to keep the name of each file of type specified by user. We assume that we will need less than 100.
 Dim TempPartitionSize As String
 Dim TempUnit As String
 Dim TotalFiles As Integer
@@ -243,6 +246,7 @@ Dim UpdateThisFile As String
 Dim UserCanPickFS As String
 Dim UserSelectedImageName As String ' If the user wants a specific name for the final ISO image, this string will hold that name
 Dim ValidDisk As Integer ' Set to 0 if user chooses an invalid Disk ID, 1 if their choice is valid
+Dim Shared ValidRange As Integer ' A flag that indicates whether a range of numbers supplied by a user is valid or not. 0=Invalid, 1=Valid
 Dim VHDFilename As String
 Dim VHDSize As Long
 Dim VHDXPath As String ' The path to where a virtual disk drive is to be created
@@ -270,47 +274,8 @@ Dim x86FileCount As Integer
 Dim x86ImageCount As Integer
 Dim x86Updates As String
 Dim y As Integer ' General purpose loop counter
-Dim z As Integer ' General purpose loop counter
-
-' Variables dimensioned as SHARED (Globally accessible to the main program and SUB procedures)
-
-Dim Shared CleanupSuccess As Integer ' Set to 0 if we do not successfully clean contents of folder in the cleanup routine, otherwise set to 1 if we succeed
-Dim Shared CreateEiCfg As String ' Set to "Y" or "N" to indicate whether an ei.cfg file should be created.
-Dim Shared DiskDetail(0) As String ' Stores details about each disk in the system
-Dim Shared DiskIDList(0) As Integer ' Used to store a list of valid Disk ID numbers
-Dim Shared DISM_Error_Found As String ' Holds a "Y" if an error is found in log file, a "N" if not found.
-Dim Shared DISMLocation As String ' Holds the location of DISM.EXE as reported by the registry
-Dim Shared ErrorsWereFound As String ' Set to "N" initially, but if any errors are found in the log files, then we set this to "Y" and inform the user after processing.
-Dim Shared ExcludeAutounattend As String ' If set to "Y" then exclude any existing autounattend.xml file, if set to "N" then it is okay to copy the file
-Dim Shared FileCount As Integer ' The number of ISO image files that need to be processed. In multiboot image creation program, this hold the number of images we have to process.
-Dim Shared ImageArchitecture As String ' Used by the DetermineArchitecture routine to determine if an ISO image is x86, x64, or dual architecture
-Dim Shared IMAGEXLocation As String ' The location of the ImageX ADK utility as reported by the registry
-Dim Shared IsRemovable As Integer ' Value returned subroutine to determine if a disk ID or drive letter passed to it is removable or not
-Dim Shared ListOfDisks As String
-Dim Shared NumberOfFiles As Integer ' Used by the FileTypeSearch subroutine to keep count of the number of files found in a folder of the type specified by a user
-Dim Shared MountedImageCDROMID As String ' The MountISO returns this value
-Dim Shared MountedImageDriveLetter As String ' The MountISO returns this value
-Dim Shared NumberOfDisks ' Stores the number of disk drives that diskpart sees in the system
-Dim Shared NumberOfSingleIndices As Integer
-Dim Shared NumberOfx64Indices As Integer
-Dim Shared NumberOfx86Indices As Integer
-Dim Shared OpsPending As String
-Dim Shared OSCDIMGLocation As String ' Holds the location of OSCDIMG.EXE as reported by the registry
-Dim Shared ProgramStartDir As String ' Holds the original starting location of the program
-ReDim Shared RangeArray(0) As Integer ' Each individual numeric value from the range of numbers passed into the ProcessRangeOfNums routine expanded into individual numbers
-Dim Shared ScriptingChoice As String ' Used to track what scripting operation user wishes to perform
-Dim Shared ScriptContents As String ' Holds the entire contents of previously created script for playback
-Dim Shared ScriptFile As String ' Used to store the name of the script file to be run
-Dim Shared Skip_PE_Updates As String ' if Set to "Y" we will not apply SSU and LCU updates to the WinPE (boot.wim) image
-Dim Shared Temp As String ' Temporary string value that can be shared with subroutines and also used elsewhere as temporary storage
-Dim Shared TempLocation As String ' This variable will hold the location of the TEMP directory.
-Dim Shared TotalNumsInArray As Integer
-Dim Shared ValidRange As Integer ' A flag that indicates whether a range of numbers supplied by a user is valid or not. 0=Invalid, 1=Valid
 Dim Shared YN As String ' This variable is returned by the "YesOrNo" procedure to parse user response to a yes or no prompt. See the SUB procedure for details
-
-' Arrays
-
-Dim Shared TempArray(100) As String ' Used by FileTypeSearch subroutine to keep the name of each file of type specified by user. We assume that we will need less than 100.
+Dim z As Integer ' General purpose loop counter
 
 ' The following arrays are dimensioned dynamically within the program. Not all of the variables dimensioned within the body of the program may be listed here.
 
@@ -352,6 +317,78 @@ ProgramStartDir$ = _CWD$
 ' that we write to be created there.
 
 ChDir TempLocation$
+
+' If this version of the program has been previously run, a file by the name of "WIM_TOOLS_x.x.x.x.txt" should exist.
+' in the %temp% folder. Note that "x.x.x.x" would be the version number of the program. If this does not exist, delete
+' any instances of this file in the %temp% folder for other versions of the program, then create this file. If the file
+' does not exist, it indicates that the program was never run before. In that case display a message to the user for
+' encouraging them to review the online help and what to do if they have system settings that orevent the program from
+' self elevating.
+
+Temp$ = "WIM_TOOLS_" + ProgramVersion + ".txt"
+If Not (_FileExists(Temp$)) Then
+
+    ' Create a fake file called WIM_TOOLS_0.txt. This will prevent the KILL command below from causing the
+    ' program to fail if no other files named WIM_TOOLS_*.txt exist.
+
+    ff = FreeFile
+    Open "WIM_TOOLS_0.txt" For Output As #ff
+    Close #ff
+
+    ' Remove any files named WIM_TOOLS_*.txt for previous versions of this program.
+
+    Kill "WIM_TOOLS_*.txt"
+
+    ff = FreeFile
+    Open Temp$ For Output As #ff
+    Print #ff, Date$; " "; Time$
+    Close #ff
+
+    Cls
+    Color 0, 10
+    Print "The following message will only be displayed once. Please read it!"
+    Color 15
+    Print
+    Print "It appears that this may be the first time that you are running this program. We encourage you to select "; Chr$(34); "Program"
+    Print "help"; Chr$(34); " from the main menu and then select "; Chr$(34); "Get general help on the use of this program"; Chr$(34); ", reviewing each item"
+    Print "within that section. After that, you should review the sections that relate to the menu items that you plan to use."
+    Print
+    Print "When you continue, this program will check to see if it was run elevated (run as administrator). If not, the program"
+    Print "will attempt to re-launch itself in an elevated state. If you see an error, this indicates that you have system"
+    Print "settings that prevent this. In that case, please re-run this program by right-clicking the program file and then"
+    Print "selecting "; Chr$(34); "Run as administrator"; Chr$(34); "."
+    Pause
+End If
+
+' This program needs to be run elevated. Check to see if the program is running elevated, if not,
+' restart in elevated mode and terminate current non-elevated program.
+
+' We need to begin by parsing the original command line for a "'" (single quote) character.
+' If this character exists, it will cause the command to self-elevate the program to fail.
+' We resolve this by changing the single quote character into two single quotes back-to-back.
+' This will "escape" the single quote character in the command.
+
+Cls
+Print "Verifying that the program is being run elevated."
+Print "Please standby..."
+
+Temp1$ = Command$(0)
+For x = 1 To Len(Temp1$)
+    If Mid$(Temp1$, x, 1) = "'" Then
+        Temp2$ = Temp2$ + "''"
+    Else
+        Temp2$ = Temp2$ + Mid$(Temp1$, x, 1)
+    End If
+Next x
+
+If (_ShellHide(">nul 2>&1 " + Chr$(34) + "%SYSTEMROOT%\system32\cacls.exe" + Chr$(34) + " " + Chr$(34) + "%SYSTEMROOT%\system32\config\system" + Chr$(34))) <> 0 Then
+    ChDir ProgramStartDir$
+    Cmd$ = "powershell.exe " + Chr$(34) + "Start-Process '" + (Mid$(Temp2$, _InStrRev(Temp2$, "\") + 1)) + "' -Verb runAs" + Chr$(34)
+    Shell Cmd$
+    System
+End If
+
+' If we reach this point then the program was run elevated.
 
 ' Determine the location of the ADK utilities DISM and OSCDIMG.
 
@@ -436,9 +473,8 @@ If _FileExists("WIM_File_Copy_Error.txt") Then Kill "WIM_File_Copy_Error.txt"
 
 If _FileExists("WIM_Shutdown_log.txt") Then
     Cls
-    Print "We have detected that the last time this program was run, it was requested that the system be shutdown after the"
-    Print "program completed. Prior to shutdown, we saved any status messages that you may need to be aware of. These"
-    Print "messages are displayed below."
+    Print "We have detected that the last time this program was run, it was requested that the system be shutdown or"
+    Print "hibernated after the program completed. This message indicates that the program ran to completion."
     Color 10
     Print "_________________________________________________________________________________________________________________"
     Color 15
@@ -448,8 +484,6 @@ If _FileExists("WIM_Shutdown_log.txt") Then
     Color 10
     Print "_________________________________________________________________________________________________________________"
     Color 15
-    Print
-    Print "End of Messages"
     Pause
     Kill "WIM_Shutdown_log.txt"
 End If
@@ -665,7 +699,6 @@ InjectUpdates:
 ' Initialize variables
 
 DISM_Error_Found$ = ""
-ErrorsWereFound$ = ""
 SourceFolder$ = ""
 FileCount = 0
 TotalFiles = 0
@@ -1960,7 +1993,7 @@ For x = 1 To TotalFiles
             CurrentIndex$ = LTrim$(Str$(IndexList(x, y)))
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Export-Image /SourceImageFile:" + CHR$(34) + MountedImageDriveLetter$ + SourceArcFlag$_
             + "\Sources\install.wim" + CHR$(34) + " /SourceIndex:" + CurrentIndex$ + " /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + DestArcFlag$_
-            + "\install.wim" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+            + "\install.wim" + CHR$(34)
             Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         Next y
 
@@ -1999,8 +2032,7 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
             AddUpdatesStatusDisplay CurrentImage, TotalImages, 25
         End If
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WIM_x64\install.wim" + CHR$(34)_
-        + " /Index:" + CurrentIndex$ + " /Mountdir:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$_
-        + "\Logs\dism.log" + CHR$(34)
+        + " /Index:" + CurrentIndex$ + " /Mountdir:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' Check the current Windows edition to see if it has any pending operations.
@@ -2062,14 +2094,14 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
         If (LCU_Update_Avail$ = "N") And (SafeOS_DU_Avail$ = "N") Then GoTo Skip_WINRE_Update_x64
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WinRE\winre.wim" + CHR$(34)_
-        + " /Index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /Index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' Add SSU Update to WinRE.WIM using the combined LCU / SSU package
 
         If LCU_Update_Avail$ = "Y" Then
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34)_
-            + " /PackagePath=" + CHR$(34) + x64Updates$ + "\LCU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+            + " /PackagePath=" + CHR$(34) + x64Updates$ + "\LCU" + CHR$(34)
             Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         End If
 
@@ -2077,20 +2109,18 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
 
         If SafeOS_DU_Avail$ = "Y" Then
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34)_
-            + " /PackagePath=" + CHR$(34) + x64Updates$ + "\SafeOS_DU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+            + " /PackagePath=" + CHR$(34) + x64Updates$ + "\SafeOS_DU" + CHR$(34)
             Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         End If
 
         ' cleanup image
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Image:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34) + " /cleanup-image /StartComponentCleanup"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Image:" + Chr$(34) + DestinationFolder$ + "\WINRE_MOUNT" + Chr$(34) + " /cleanup-image /StartComponentCleanup" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' dismount image
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Unmount-Image /MountDir:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34) + " /Commit"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /MountDir:" + Chr$(34) + DestinationFolder$ + "\WINRE_MOUNT" + Chr$(34) + " /Commit" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         Skip_WINRE_Update_x64:
@@ -2098,8 +2128,7 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
         ' export index 1
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Export-Image /SourceImageFile:" + CHR$(34) + DestinationFolder$ + "\WinRE\winre.wim" + CHR$(34)_
-        + " /SourceIndex:1 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\WINRE_x64.WIM" + CHR$(34) + " /LogPath=" + CHR$(34)_
-        + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /SourceIndex:1 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\WINRE_x64.WIM" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' del the temp file
@@ -2125,27 +2154,25 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
         If (LCU_Update_Avail$ = "N") Then GoTo Export_PE_Index1
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WINPE\BOOT_x64.WIM" + CHR$(34)_
-        + " /Index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /Index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' Add LCU /SSU Update to BOOT.WIM, Index 1
 
         If LCU_Update_Avail$ = "Y" Then
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34)_
-            + " /PackagePath=" + CHR$(34) + x64Updates$ + "\LCU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+            + " /PackagePath=" + CHR$(34) + x64Updates$ + "\LCU" + CHR$(34)
             Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         End If
 
         ' cleanup image
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /cleanup-image /StartComponentCleanup"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Image:" + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT" + Chr$(34) + " /cleanup-image /StartComponentCleanup" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' dismount
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Unmount-Image /MountDir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /Commit"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /MountDir:" + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT" + Chr$(34) + " /Commit" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         Export_PE_Index1:
@@ -2153,8 +2180,7 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
         ' export index 1
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Export-Image /SourceImageFile:" + CHR$(34) + DestinationFolder$ + "\WINPE\BOOT_x64.WIM" + CHR$(34)_
-        + " /SourceIndex:1 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x64.WIM" + CHR$(34) + " /LogPath=" + CHR$(34)_
-        + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /SourceIndex:1 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x64.WIM" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' Update WinPE (BOOT.WIM)
@@ -2177,14 +2203,14 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
         If (LCU_Update_Avail$ = "N") And (PE_Files_Avail$ = "N") Then GoTo Export_PE_Index2
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WINPE\BOOT_x64.WIM" + CHR$(34)_
-        + " /Index:2 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /Index:2 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' Add LCU / SSU Update to BOOT.WIM, Index 2
 
         If (LCU_Update_Avail$ = "Y") And (Skip_PE_Updates$ = "N") Then
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34)_
-            + " /PackagePath=" + CHR$(34) + x64Updates$ + "\LCU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+            + " /PackagePath=" + CHR$(34) + x64Updates$ + "\LCU" + CHR$(34)
             Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         End If
 
@@ -2210,13 +2236,12 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
         ' cleanup image
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34)_
-        + " /cleanup-image /StartComponentCleanup" + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /cleanup-image /StartComponentCleanup"  + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' dismount
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Unmount-Image /MountDir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /Commit"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /MountDir:" + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT" + Chr$(34) + " /Commit" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         Export_PE_Index2:
@@ -2224,8 +2249,7 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
         ' export index 2
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Export-Image /Bootable /SourceImageFile:" + CHR$(34) + DestinationFolder$ + "\WINPE\BOOT_x64.WIM" + CHR$(34)_
-        + " /SourceIndex:2 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x64.WIM" + CHR$(34) + " /LogPath=" + CHR$(34)_
-        + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /SourceIndex:2 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x64.WIM" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         SkipWinPEx64:
@@ -2236,7 +2260,7 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
 
         If LCU_Update_Avail$ = "Y" Then
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /PackagePath="_
-            + CHR$(34) + x64Updates$ + "\LCU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+            + CHR$(34) + x64Updates$ + "\LCU" + CHR$(34)
             Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         End If
 
@@ -2247,8 +2271,7 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
         Shell _Hide Cmd$
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 8
 Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Cleanup-Image /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34)_
-        + " /StartComponentCleanup /ResetBase /ScratchDir:" + CHR$(34) + DestinationFolder$ + "\Temp" + CHR$(34) + " /LogPath=" + CHR$(34)_
-        + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /StartComponentCleanup /ResetBase /ScratchDir:" + CHR$(34) + DestinationFolder$ + "\Temp" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 9
 
@@ -2263,7 +2286,7 @@ Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Cleanup-Image /Image:" + CHR$(34
 
         If Other_Updates_Avail$ = "Y" Then
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34)_
-            + " /PackagePath=" + CHR$(34) + x64Updates$ + "\Other" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+            + " /PackagePath=" + CHR$(34) + x64Updates$ + "\Other" + CHR$(34)
             Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         End If
 
@@ -2279,18 +2302,11 @@ Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Cleanup-Image /Image:" + CHR$(34
 
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 10
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Get-Packages /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " > "_
-        + CHR$(34) + DestinationFolder$ + "\Logs\x64_" + LTRIM$(STR$(x)) + "UpdateResults.txt" + CHR$(34) + ""
+        + CHR$(34) + DestinationFolder$ + "\Logs\x64_" + LTRIM$(STR$(x)) + "_UpdateResults.txt" + CHR$(34) + ""
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 11
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Unmount-Image /MountDir:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /Commit"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /MountDir:" + Chr$(34) + DestinationFolder$ + "\mount" + Chr$(34) + " /Commit" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
-        Cmd$ = "rename " + Chr$(34) + DestinationFolder$ + "\logs\dism.log" + Chr$(34) + " dism.log_x64_" + Right$(Str$(x), (Len(Str$(x)) - 1))
-        Shell _Hide Cmd$
-        FindDISMLogErrors_SingleFile (DestinationFolder$ + "\logs\dism.log_x64_" + Right$(Str$(x), (Len(Str$(x)) - 1))), DestinationFolder$ + "\logs"
-        If DISM_Error_Found$ = "Y" Then
-            ErrorsWereFound$ = "Y"
-        End If
     Next x
 End If
 
@@ -2308,8 +2324,7 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
         End If
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WIM_x86\install.wim"_
-        + CHR$(34) + " /Index:" + CurrentIndex$ + " /Mountdir:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /LogPath=" + CHR$(34)_
-        + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + CHR$(34) + " /Index:" + CurrentIndex$ + " /Mountdir:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' Check the current Windows edition to see if it has any pending operations.
@@ -2371,14 +2386,14 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
         If (LCU_Update_Avail$ = "N") And (SafeOS_DU_Avail$ = "N") Then GoTo Skip_WINRE_Update_x86
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WinRE\winre.wim" + CHR$(34)_
-        + " /Index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /Index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' Add SSU Update to WinRE.WIM from the combined LCU / SSU update
 
         If LCU_Update_Avail$ = "Y" Then
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34) + " /PackagePath=" + CHR$(34)_
-            + x86Updates$ + "\LCU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+            + x86Updates$ + "\LCU" + CHR$(34)
             Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         End If
 
@@ -2386,20 +2401,18 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
 
         If SafeOS_DU_Avail$ = "Y" Then
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34) + " /PackagePath=" + CHR$(34)_
-            + x86Updates$ + "\SafeOS_DU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+            + x86Updates$ + "\SafeOS_DU" + CHR$(34)
             Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         End If
 
         ' cleanup image
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Image:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34) + " /cleanup-image /StartComponentCleanup"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Image:" + Chr$(34) + DestinationFolder$ + "\WINRE_MOUNT" + Chr$(34) + " /cleanup-image /StartComponentCleanup" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' dismount image
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Unmount-Image /MountDir:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34) + " /Commit" + " /LogPath="_
-        + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /MountDir:" + Chr$(34) + DestinationFolder$ + "\WINRE_MOUNT" + Chr$(34) + " /Commit" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         Skip_WINRE_Update_x86:
@@ -2407,8 +2420,7 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
         ' export index 1
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Export-Image /SourceImageFile:" + CHR$(34) + DestinationFolder$ + "\WinRE\winre.wim" + CHR$(34)_
-        + " /SourceIndex:1 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\WINRE_x86.WIM" + CHR$(34) + " /LogPath=" + CHR$(34)_
-        + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /SourceIndex:1 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\WINRE_x86.WIM" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' del the temp file
@@ -2436,26 +2448,24 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
         If (LCU_Update_Avail$ = "N") Then GoTo Export_PE_Index1_x86
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WINPE\BOOT_x86.WIM" + CHR$(34)_
-        + " /Index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /Index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' Add LCU / SSU Update to BOOT.WIM, Index 1
 
         If (LCU_Update_Avail$ = "Y") And (Skip_PE_Updates$ = "N") Then
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /PackagePath="_
-            + CHR$(34) + x86Updates$ + "\LCU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+            + CHR$(34) + x86Updates$ + "\LCU" + CHR$(34)
             Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         End If
 
         ' cleanup image
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /cleanup-image /StartComponentCleanup"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Image:" + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT" + Chr$(34) + " /cleanup-image /StartComponentCleanup" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         ' dismount
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Unmount-Image /MountDir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /Commit"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /MountDir:" + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT" + Chr$(34) + " /Commit" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         Export_PE_Index1_x86:
@@ -2463,8 +2473,7 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
         ' export index 1
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Export-Image /SourceImageFile:" + CHR$(34) + DestinationFolder$ + "\WINPE\BOOT_x86.WIM" + CHR$(34)_
-        + " /SourceIndex:1 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x86.WIM" + CHR$(34) + " /LogPath=" + CHR$(34)_
-        + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /SourceIndex:1 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x86.WIM" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' Update WinPE (BOOT.WIM)
@@ -2487,14 +2496,14 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
         If (LCU_Update_Avail$ = "N") And (PE_Files_Avail$ = "N") Then GoTo Export_PE_Index_x86
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WINPE\BOOT_x86.WIM" + CHR$(34)_
-        + " /Index:2 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /Index:2 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' Add LCU / SSU Update to BOOT.WIM, Index 2
 
         If LCU_Update_Avail$ = "Y" Then
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /PackagePath="_
-            + CHR$(34) + x86Updates$ + "\LCU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+            + CHR$(34) + x86Updates$ + "\LCU" + CHR$(34)
             Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         End If
 
@@ -2519,14 +2528,12 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
 
         ' cleanup image
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /cleanup-image /StartComponentCleanup"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Image:" + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT" + Chr$(34) + " /cleanup-image /StartComponentCleanup" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' dismount
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Unmount-Image /MountDir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /Commit"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /MountDir:" + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT" + Chr$(34) + " /Commit" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         Export_PE_Index_x86:
@@ -2534,8 +2541,7 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
         ' export index 2
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Export-Image /Bootable /SourceImageFile:" + CHR$(34) + DestinationFolder$ + "\WINPE\BOOT_x86.WIM" + CHR$(34)_
-        + " /SourceIndex:2 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x86.WIM" + CHR$(34) + " /LogPath=" + CHR$(34)_
-        + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /SourceIndex:2 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x86.WIM" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' The WinRE and WinPE components have been updated. We will now proceed with updating of the main OS (install.wim).
@@ -2548,7 +2554,7 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
 
         If LCU_Update_Avail$ = "Y" Then
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /PackagePath="_
-            + CHR$(34) + x86Updates$ + "\LCU" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+            + CHR$(34) + x86Updates$ + "\LCU" + CHR$(34)
             Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         End If
 
@@ -2557,8 +2563,7 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
         Shell _Hide Cmd$
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 8
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Cleanup-Image /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34)_
-        + " /StartComponentCleanup /ResetBase /ScratchDir:" + CHR$(34) + DestinationFolder$ + "\Temp" + CHR$(34) + " /LogPath=" + CHR$(34)_
-        + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /StartComponentCleanup /ResetBase /ScratchDir:" + CHR$(34) + DestinationFolder$ + "\Temp" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 9
 
@@ -2573,7 +2578,7 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
 
         If Other_Updates_Avail$ = "Y" Then
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /PackagePath="_
-            + CHR$(34) + x86Updates$ + "\Other" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+            + CHR$(34) + x86Updates$ + "\Other" + CHR$(34)
             Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         End If
 
@@ -2589,18 +2594,11 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
 
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 10
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Get-Packages /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " > " + CHR$(34)_
-        + DestinationFolder$ + "\Logs\x86_" + LTRIM$(STR$(x)) + "UpdateResults.txt" + CHR$(34)
+        + DestinationFolder$ + "\Logs\x86_" + LTRIM$(STR$(x)) + "_UpdateResults.txt" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 11
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Unmount-Image /MountDir:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /Commit"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /MountDir:" + Chr$(34) + DestinationFolder$ + "\mount" + Chr$(34) + " /Commit" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
-        Cmd$ = "rename " + Chr$(34) + DestinationFolder$ + "\logs\dism.log" + Chr$(34) + " dism.log_x86_" + Right$(Str$(x), (Len(Str$(x)) - 1))
-        Shell _Hide Cmd$
-        FindDISMLogErrors_SingleFile (DestinationFolder$ + "\logs\dism.log_x86_" + Right$(Str$(x), (Len(Str$(x)) - 1))), DestinationFolder$ + "\logs"
-        If DISM_Error_Found$ = "Y" Then
-            ErrorsWereFound$ = "Y"
-        End If
     Next x
 End If
 
@@ -2616,8 +2614,7 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "BCD") Then
             AddUpdatesStatusDisplay CurrentImage, TotalImages, 51
         End If
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WIM_x64\install.wim" + CHR$(34)_
-        + " /Index:" + CurrentIndex$ + " /Mountdir:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$_
-        + "\Logs\dism.log" + CHR$(34)
+        + " /Index:" + CurrentIndex$ + " /Mountdir:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         If x > 1 Then
@@ -2632,23 +2629,21 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "BCD") Then
         ' Mount the WinRE Image
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WinRE\winre.wim" + CHR$(34)_
-        + " /Index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /Index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Driver /Image:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34) +_
-         " /Driver:" + x64Updates$ + CHR$(34) + " /recurse" + "/LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+         " /Driver:" + x64Updates$ + CHR$(34) + " /recurse" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' cleanup image
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Image:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34) + " /cleanup-image /StartComponentCleanup"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Image:" + Chr$(34) + DestinationFolder$ + "\WINRE_MOUNT" + Chr$(34) + " /cleanup-image /StartComponentCleanup" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' dismount image
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Unmount-Image /MountDir:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34) + " /Commit"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /MountDir:" + Chr$(34) + DestinationFolder$ + "\WINRE_MOUNT" + Chr$(34) + " /Commit" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         Skip_WINRE_Update_x64_BCD:
@@ -2656,8 +2651,7 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "BCD") Then
         ' export index 1
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Export-Image /SourceImageFile:" + CHR$(34) + DestinationFolder$ + "\WinRE\winre.wim" + CHR$(34)_
-        + " /SourceIndex:1 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\WINRE_x64.WIM" + CHR$(34) + " /LogPath=" + CHR$(34)_
-        + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /SourceIndex:1 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\WINRE_x64.WIM" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' del the temp file
@@ -2672,23 +2666,21 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "BCD") Then
         ' Mount the WinPE Image - Index 1
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WINPE\BOOT_x64.WIM" + CHR$(34)_
-        + " /Index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /Index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Driver /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) +_
-         " /Driver:" + x64Updates$ + CHR$(34) + " /recurse" + "/LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+         " /Driver:" + x64Updates$ + CHR$(34) + " /recurse" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' cleanup image
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /cleanup-image /StartComponentCleanup"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Image:" + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT" + Chr$(34) + " /cleanup-image /StartComponentCleanup" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' dismount
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Unmount-Image /MountDir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /Commit"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /MountDir:" + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT" + Chr$(34) + " /Commit" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         Export_PE_Index1_BCD:
@@ -2696,8 +2688,7 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "BCD") Then
         ' export index 1
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Export-Image /SourceImageFile:" + CHR$(34) + DestinationFolder$ + "\WINPE\BOOT_x64.WIM" + CHR$(34)_
-        + " /SourceIndex:1 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x64.WIM" + CHR$(34) + " /LogPath=" + CHR$(34)_
-        + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /SourceIndex:1 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x64.WIM" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' Update WinPE (BOOT.WIM)
@@ -2708,23 +2699,22 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "BCD") Then
         ' Mount the WinPE Image - Index 2
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WINPE\BOOT_x64.WIM" + CHR$(34)_
-        + " /Index:2 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /Index:2 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Driver /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) +_
-         " /Driver:" + x64Updates$ + CHR$(34) + " /recurse" + "/LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+         " /Driver:" + x64Updates$ + CHR$(34) + " /recurse" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' cleanup image
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34)_
-        + " /cleanup-image /StartComponentCleanup" + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /cleanup-image /StartComponentCleanup"  + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' dismount
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Unmount-Image /MountDir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /Commit"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /MountDir:" + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT" + Chr$(34) + " /Commit" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         Export_PE_Index2_BCD:
@@ -2732,8 +2722,7 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "BCD") Then
         ' export index 2
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Export-Image /Bootable /SourceImageFile:" + CHR$(34) + DestinationFolder$ + "\WINPE\BOOT_x64.WIM" + CHR$(34)_
-        + " /SourceIndex:2 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x64.WIM" + CHR$(34) + " /LogPath=" + CHR$(34)_
-        + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /SourceIndex:2 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x64.WIM" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         Cmd$ = "move /y " + Chr$(34) + DestinationFolder$ + "\winpe\boot_x64.wim" + Chr$(34) + " " + Chr$(34) + DestinationFolder$ + "\assets" + Chr$(34)
@@ -2749,26 +2738,18 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "BCD") Then
         Shell _Hide Cmd$
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 55
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Cleanup-Image /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34)_
-        + " /StartComponentCleanup /ResetBase /ScratchDir:" + CHR$(34) + DestinationFolder$ + "\Temp" + CHR$(34) + " /LogPath=" + CHR$(34)_
-        + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /StartComponentCleanup /ResetBase /ScratchDir:" + CHR$(34) + DestinationFolder$ + "\Temp" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 56
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Get-Packages /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " > "_
-        + CHR$(34) + DestinationFolder$ + "\Logs\x64_" + LTRIM$(STR$(x)) + "UpdateResults.txt" + CHR$(34) + ""
+        + CHR$(34) + DestinationFolder$ + "\Logs\x64_" + LTRIM$(STR$(x)) + "_UpdateResults.txt" + CHR$(34) + ""
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' Unmounting and saving the Windows edition
 
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 57
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Unmount-Image /MountDir:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /Commit"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /MountDir:" + Chr$(34) + DestinationFolder$ + "\mount" + Chr$(34) + " /Commit" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
-        Cmd$ = "rename " + Chr$(34) + DestinationFolder$ + "\logs\dism.log" + Chr$(34) + " dism.log_x64_" + Right$(Str$(x), (Len(Str$(x)) - 1))
-        Shell _Hide Cmd$
-        FindDISMLogErrors_SingleFile (DestinationFolder$ + "\logs\dism.log_x64_" + Right$(Str$(x), (Len(Str$(x)) - 1))), DestinationFolder$ + "\logs"
-        If DISM_Error_Found$ = "Y" Then
-            ErrorsWereFound$ = "Y"
-        End If
     Next x
 End If
 
@@ -2785,8 +2766,7 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "BCD") Then
         End If
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WIM_x86\install.wim"_
-        + CHR$(34) + " /Index:" + CurrentIndex$ + " /Mountdir:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /LogPath=" + CHR$(34)_
-        + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + CHR$(34) + " /Index:" + CurrentIndex$ + " /Mountdir:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34)
 
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
@@ -2804,23 +2784,21 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "BCD") Then
         ' Mount the WinRE Image
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WinRE\winre.wim" + CHR$(34)_
-        + " /Index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /Index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Driver /Image:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34) +_
-         " /Driver:" + x86Updates$ + CHR$(34) + " /recurse" + "/LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+         " /Driver:" + x86Updates$ + CHR$(34) + " /recurse"  + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' cleanup image
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Image:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34) + " /cleanup-image /StartComponentCleanup"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Image:" + Chr$(34) + DestinationFolder$ + "\WINRE_MOUNT" + Chr$(34) + " /cleanup-image /StartComponentCleanup" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' dismount image
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Unmount-Image /MountDir:" + CHR$(34) + DestinationFolder$ + "\WINRE_MOUNT" + CHR$(34) + " /Commit" + " /LogPath="_
-        + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /MountDir:" + Chr$(34) + DestinationFolder$ + "\WINRE_MOUNT" + Chr$(34) + " /Commit" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         Skip_WINRE_Update_x86_BCD:
@@ -2828,8 +2806,7 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "BCD") Then
         ' export index 1
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Export-Image /SourceImageFile:" + CHR$(34) + DestinationFolder$ + "\WinRE\winre.wim" + CHR$(34)_
-        + " /SourceIndex:1 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\WINRE_x86.WIM" + CHR$(34) + " /LogPath=" + CHR$(34)_
-        + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /SourceIndex:1 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\WINRE_x86.WIM" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' del the temp file
@@ -2846,22 +2823,20 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "BCD") Then
         ' Mount the WinPE Image - Index 1
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WINPE\BOOT_x86.WIM" + CHR$(34)_
-        + " /Index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /Index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Driver /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) +_
-         " /Driver:" + x86Updates$ + CHR$(34) + " /recurse" + "/LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+         " /Driver:" + x86Updates$ + CHR$(34) + " /recurse"  + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' cleanup image
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /cleanup-image /StartComponentCleanup"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Image:" + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT" + Chr$(34) + " /cleanup-image /StartComponentCleanup" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         ' dismount
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Unmount-Image /MountDir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /Commit"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /MountDir:" + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT" + Chr$(34) + " /Commit" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         Export_PE_Index1_x86_BCD:
@@ -2869,8 +2844,7 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "BCD") Then
         ' export index 1
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Export-Image /SourceImageFile:" + CHR$(34) + DestinationFolder$ + "\WINPE\BOOT_x86.WIM" + CHR$(34)_
-        + " /SourceIndex:1 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x86.WIM" + CHR$(34) + " /LogPath=" + CHR$(34)_
-        + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /SourceIndex:1 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x86.WIM" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' Update WinPE (BOOT.WIM)
@@ -2881,23 +2855,21 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "BCD") Then
         ' Mount the WinPE Image - Index 2
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WINPE\BOOT_x86.WIM" + CHR$(34)_
-        + " /Index:2 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /Index:2 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Driver /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) +_
-         " /Driver:" + x86Updates$ + CHR$(34) + " /recurse" + "/LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+         " /Driver:" + x86Updates$ + CHR$(34) + " /recurse"  + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' cleanup image
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Image:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /cleanup-image /StartComponentCleanup"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Image:" + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT" + Chr$(34) + " /cleanup-image /StartComponentCleanup" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         ' dismount
 
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Unmount-Image /MountDir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /Commit"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /MountDir:" + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT" + Chr$(34) + " /Commit" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         Export_PE_Index_x86_BCD:
@@ -2905,8 +2877,7 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "BCD") Then
         ' export index 2
 
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Export-Image /Bootable /SourceImageFile:" + CHR$(34) + DestinationFolder$ + "\WINPE\BOOT_x86.WIM" + CHR$(34)_
-        + " /SourceIndex:2 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x86.WIM" + CHR$(34) + " /LogPath=" + CHR$(34)_
-        + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /SourceIndex:2 /DestinationImageFile:" + CHR$(34) + DestinationFolder$ + "\Assets\BOOT_x86.WIM" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
         Cmd$ = "move /y " + Chr$(34) + DestinationFolder$ + "\winpe\boot_x86.wim" + Chr$(34) + " " + Chr$(34) + DestinationFolder$ + "\assets" + Chr$(34)
@@ -2922,23 +2893,15 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "BCD") Then
         Shell _Hide Cmd$
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 55
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Cleanup-Image /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34)_
-        + " /StartComponentCleanup /ResetBase /ScratchDir:" + CHR$(34) + DestinationFolder$ + "\Temp" + CHR$(34) + " /LogPath=" + CHR$(34)_
-        + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + " /StartComponentCleanup /ResetBase /ScratchDir:" + CHR$(34) + DestinationFolder$ + "\Temp" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 56
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Get-Packages /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " > "_
-        + CHR$(34) + DestinationFolder$ + "\Logs\x86_" + LTRIM$(STR$(x)) + "UpdateResults.txt" + CHR$(34) + ""
+        + CHR$(34) + DestinationFolder$ + "\Logs\x86_" + LTRIM$(STR$(x)) + "_UpdateResults.txt" + CHR$(34) + ""
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 57
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Unmount-Image /MountDir:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /Commit"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /MountDir:" + Chr$(34) + DestinationFolder$ + "\mount" + Chr$(34) + " /Commit" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
-        Cmd$ = "rename " + Chr$(34) + DestinationFolder$ + "\logs\dism.log" + Chr$(34) + " dism.log_x86_" + Right$(Str$(x), (Len(Str$(x)) - 1))
-        Shell _Hide Cmd$
-        FindDISMLogErrors_SingleFile (DestinationFolder$ + "\logs\dism.log_x86_" + Right$(Str$(x), (Len(Str$(x)) - 1))), DestinationFolder$ + "\logs"
-        If DISM_Error_Found$ = "Y" Then
-            ErrorsWereFound = "Y"
-        End If
     Next x
 End If
 
@@ -2951,27 +2914,19 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "DRIVERS") Then
         CurrentIndex$ = LTrim$(Str$(x))
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 17
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WIM_x64\install.wim" + CHR$(34)_
-        + " /Index:" + CurrentIndex$ + " /Mountdir:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$_
-        + "\Logs\dism.log" + CHR$(34)
+        + " /Index:" + CurrentIndex$ + " /Mountdir:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 18
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Image:" + CHR$(34) + DestinationFolder$ + "\Mount" + CHR$(34) + " /Add-Driver /Driver:" + CHR$(34)_
-        + x64Updates$ + CHR$(34) + " /RECURSE /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + x64Updates$ + CHR$(34) + " /RECURSE" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 19
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Get-Drivers /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " > " + CHR$(34)_
-        + DestinationFolder$ + "\Logs\x64_" + LTRIM$(STR$(x)) + "UpdateResults.txt" + CHR$(34)
+        + DestinationFolder$ + "\Logs\x64_" + LTRIM$(STR$(x)) + "_UpdateResults.txt" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 20
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Unmount-Image /MountDir:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /Commit"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /MountDir:" + Chr$(34) + DestinationFolder$ + "\mount" + Chr$(34) + " /Commit" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
-        Cmd$ = "rename " + Chr$(34) + DestinationFolder$ + "\logs\dism.log" + Chr$(34) + " dism.log_x64_" + Right$(Str$(x), (Len(Str$(x)) - 1))
-        Shell _Hide Cmd$
-        FindDISMLogErrors_SingleFile (DestinationFolder$ + "\logs\dism.log_x64_" + Right$(Str$(x), (Len(Str$(x)) - 1))), DestinationFolder$ + "\logs"
-        If DISM_Error_Found$ = "Y" Then
-            ErrorsWereFound$ = "Y"
-        End If
     Next x
 End If
 
@@ -2984,27 +2939,19 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "DRIVERS") Then
         CurrentIndex$ = LTrim$(Str$(x))
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 17
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\WIM_x86\install.wim" + CHR$(34)_
-        + " /Index:" + CurrentIndex$ + " /Mountdir:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$_
-        + "\Logs\dism.log" + CHR$(34)
+        + " /Index:" + CurrentIndex$ + " /Mountdir:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 18
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Image:" + CHR$(34) + DestinationFolder$ + "\Mount" + CHR$(34) + " /Add-Driver /Driver:" + CHR$(34)_
-        + x86Updates$ + CHR$(34) + " /RECURSE /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        + x86Updates$ + CHR$(34) + " /RECURSE" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 19
         Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Get-Drivers /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " > " + CHR$(34)_
-        + DestinationFolder$ + "\Logs\x86_" + LTRIM$(STR$(x)) + "UpdateResults.txt" + CHR$(34)
+        + DestinationFolder$ + "\Logs\x86_" + LTRIM$(STR$(x)) + "_UpdateResults.txt" + CHR$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 20
-        Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Unmount-Image /MountDir:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /Commit"_
-        + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+        Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /MountDir:" + Chr$(34) + DestinationFolder$ + "\mount" + Chr$(34) + " /Commit" + Chr$(34)
         Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
-        Cmd$ = "rename " + Chr$(34) + DestinationFolder$ + "\logs\dism.log" + Chr$(34) + " dism.log_x86_" + Right$(Str$(x), (Len(Str$(x)) - 1))
-        Shell _Hide Cmd$
-        FindDISMLogErrors_SingleFile (DestinationFolder$ + "\logs\dism.log_x86_" + Right$(Str$(x), (Len(Str$(x)) - 1))), DestinationFolder$ + "\logs"
-        If DISM_Error_Found$ = "Y" Then
-            ErrorsWereFound$ = "Y"
-        End If
     Next x
 End If
 
@@ -3292,8 +3239,7 @@ If ProjectType$ = "DUAL" Then
         If x64UpdateImageCount > 0 Then
             For x = 1 To x64UpdateImageCount
 Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Export-Image /SourceImageFile:" + Chr$(34) + DestinationFolder$ + "\WIM_x64\install.wim"_
-             + Chr$(34) + " /SourceIndex:" + LTrim$(Str$(x)) + " /DestinationImageFile:" + Chr$(34) + DestinationFolder$ + "\ISO_Files\Sources\install.wim"_
-              + Chr$(34) + " /LogPath=" + Chr$(34) + DestinationFolder$ + "\Logs\dism.log" + Chr$(34)
+             + Chr$(34) + " /SourceIndex:" + LTrim$(Str$(x)) + " /DestinationImageFile:" + Chr$(34) + DestinationFolder$ + "\ISO_Files\Sources\install.wim"+ Chr$(34)
                 Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
             Next x
         End If
@@ -3301,8 +3247,7 @@ Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Export-Image /SourceImageFile:" 
         If x86UpdateImageCount > 0 Then
             For x = 1 To x86UpdateImageCount
 Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Export-Image /SourceImageFile:" + Chr$(34) + DestinationFolder$ + "\WIM_x86\install.wim"_
-             + Chr$(34) + " /SourceIndex:" + LTrim$(Str$(x)) + " /DestinationImageFile:" + Chr$(34) + DestinationFolder$ + "\ISO_Files\Sources\install.wim"_
-              + Chr$(34) + " /LogPath=" + Chr$(34) + DestinationFolder$ + "\Logs\dism.log" + Chr$(34)
+             + Chr$(34) + " /SourceIndex:" + LTrim$(Str$(x)) + " /DestinationImageFile:" + Chr$(34) + DestinationFolder$ + "\ISO_Files\Sources\install.wim"+ Chr$(34)
                 Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
             Next x
         End If
@@ -3325,8 +3270,7 @@ Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Export-Image /SourceImageFile:" 
         If x64UpdateImageCount > 0 Then
             For x = 1 To x64UpdateImageCount
 Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Export-Image /SourceImageFile:" + Chr$(34) + DestinationFolder$ + "\WIM_x64\install.wim"_
-             + Chr$(34) + " /SourceIndex:" + LTrim$(Str$(x)) + " /DestinationImageFile:" + Chr$(34) + DestinationFolder$ + "\ISO_Files\x64\Sources\install.wim"_
-              + Chr$(34) + " /LogPath=" + Chr$(34) + DestinationFolder$ + "\Logs\dism.log" + Chr$(34)
+             + Chr$(34) + " /SourceIndex:" + LTrim$(Str$(x)) + " /DestinationImageFile:" + Chr$(34) + DestinationFolder$ + "\ISO_Files\x64\Sources\install.wim"+ Chr$(34)
                 Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
             Next x
         End If
@@ -3334,8 +3278,7 @@ Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Export-Image /SourceImageFile:" 
         If x86UpdateImageCount > 0 Then
             For x = 1 To x86UpdateImageCount
 Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Export-Image /SourceImageFile:" + Chr$(34) + DestinationFolder$ + "\WIM_x86\install.wim"_
-             + Chr$(34) + " /SourceIndex:" + LTrim$(Str$(x)) + " /DestinationImageFile:" + Chr$(34) + DestinationFolder$ + "\ISO_Files\x86\Sources\install.wim"_
-              + Chr$(34) + " /LogPath=" + Chr$(34) + DestinationFolder$ + "\Logs\dism.log" + Chr$(34)
+             + Chr$(34) + " /SourceIndex:" + LTrim$(Str$(x)) + " /DestinationImageFile:" + Chr$(34) + DestinationFolder$ + "\ISO_Files\x86\Sources\install.wim"+ Chr$(34)
                 Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
             Next x
         End If
@@ -3363,8 +3306,7 @@ If ProjectType$ = "SINGLE" Then
             If x64UpdateImageCount > 0 Then
                 For x = 1 To x64UpdateImageCount
 Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Export-Image /SourceImageFile:" + Chr$(34) + DestinationFolder$ + "\WIM_x64\install.wim"_
-             + Chr$(34) + " /SourceIndex:" + LTrim$(Str$(x)) + " /DestinationImageFile:" + Chr$(34) + DestinationFolder$ + "\ISO_Files\Sources\install.wim"_
-              + Chr$(34) + " /LogPath=" + Chr$(34) + DestinationFolder$ + "\Logs\dism.log" + Chr$(34)
+             + Chr$(34) + " /SourceIndex:" + LTrim$(Str$(x)) + " /DestinationImageFile:" + Chr$(34) + DestinationFolder$ + "\ISO_Files\Sources\install.wim"+ Chr$(34)
                     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
                 Next x
             End If
@@ -3387,8 +3329,7 @@ Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Export-Image /SourceImageFile:" 
             If x86UpdateImageCount > 0 Then
                 For x = 1 To x86UpdateImageCount
 Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Export-Image /SourceImageFile:" + Chr$(34) + DestinationFolder$ + "\WIM_x86\install.wim"_
-             + Chr$(34) + " /SourceIndex:" + LTrim$(Str$(x)) + " /DestinationImageFile:" + Chr$(34) + DestinationFolder$ + "\ISO_Files\Sources\install.wim"_
-              + Chr$(34) + " /LogPath=" + Chr$(34) + DestinationFolder$ + "\Logs\dism.log" + Chr$(34)
+             + Chr$(34) + " /SourceIndex:" + LTrim$(Str$(x)) + " /DestinationImageFile:" + Chr$(34) + DestinationFolder$ + "\ISO_Files\Sources\install.wim"+ Chr$(34)
                     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
                 Next x
             End If
@@ -3412,7 +3353,7 @@ End If
 If _DirExists(DestinationFolder$ + "\ISO_Files\Sources") Then
 
 Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\ISO_Files\Sources\boot.wim" + CHR$(34)_
- + " /index:2 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+ + " /index:2 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34)
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
     Cmd$ = "copy /B " + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT\setup.exe" + Chr$(34) + " " + Chr$(34) + DestinationFolder$ + "\ISO_Files" + Chr$(34) + " /Y"
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
@@ -3420,15 +3361,15 @@ Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
     Cmd$ = "robocopy " + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT\Windows\System32" + Chr$(34) + " " + Chr$(34) + DestinationFolder$ + "\ISO_Files\Sources" + Chr$(34) + " *.* /e /ndl /xo /xx /xl /np /r:0 /w:0 > NUL"
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
-    Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /Mountdir:" + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT" + Chr$(34) + " /discard /LogPath=" + Chr$(34) + DestinationFolder$ + "\Logs\dism.log" + Chr$(34)
+    Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /Mountdir:" + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT" + Chr$(34) + " /discard" + Chr$(34)
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
 Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\ISO_Files\Sources\install.wim" + CHR$(34)_
- + " /index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+ + " /index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\MOUNT" + CHR$(34)
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
     Cmd$ = "robocopy " + Chr$(34) + DestinationFolder$ + "\MOUNT\Windows\System32" + Chr$(34) + " " + Chr$(34) + DestinationFolder$ + "\ISO_Files\Sources" + Chr$(34) + " *.* /e /ndl /xo /xx /xl /np /r:0 /w:0 > NUL"
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
-    Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /Mountdir:" + Chr$(34) + DestinationFolder$ + "\MOUNT" + Chr$(34) + " /discard /LogPath=" + Chr$(34) + DestinationFolder$ + "\Logs\dism.log" + Chr$(34)
+    Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /Mountdir:" + Chr$(34) + DestinationFolder$ + "\MOUNT" + Chr$(34) + " /discard" + Chr$(34)
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
 Else
@@ -3438,7 +3379,7 @@ Else
     ' Handle x64
 
 Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\ISO_Files\x64\Sources\boot.wim" + CHR$(34)_
- + " /index:2 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+ + " /index:2 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34)
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
     Cmd$ = "copy /B " + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT\setup.exe" + Chr$(34) + " " + Chr$(34) + DestinationFolder$ + "\ISO_Files\x64" + Chr$(34) + " /Y"
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
@@ -3446,21 +3387,21 @@ Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
     Cmd$ = "robocopy " + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT\Windows\System32" + Chr$(34) + " " + Chr$(34) + DestinationFolder$ + "\ISO_Files\x64\Sources" + Chr$(34) + " *.* /e /ndl /xo /xx /xl /np /r:0 /w:0 > NUL"
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
-    Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /Mountdir:" + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT" + Chr$(34) + " /discard /LogPath=" + Chr$(34) + DestinationFolder$ + "\Logs\dism.log" + Chr$(34)
+    Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /Mountdir:" + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT" + Chr$(34) + " /discard" + Chr$(34)
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
 Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\ISO_Files\x64\Sources\install.wim" + CHR$(34)_
- + " /index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+ + " /index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\MOUNT" + CHR$(34)
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
     Cmd$ = "robocopy " + Chr$(34) + DestinationFolder$ + "\MOUNT\Windows\System32" + Chr$(34) + " " + Chr$(34) + DestinationFolder$ + "\ISO_Files\x64\Sources" + Chr$(34) + " *.* /e /ndl /xo /xx /xl /np /r:0 /w:0 > NUL"
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
-    Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /Mountdir:" + Chr$(34) + DestinationFolder$ + "\MOUNT" + Chr$(34) + " /discard /LogPath=" + Chr$(34) + DestinationFolder$ + "\Logs\dism.log" + Chr$(34)
+    Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /Mountdir:" + Chr$(34) + DestinationFolder$ + "\MOUNT" + Chr$(34) + " /discard" + Chr$(34)
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
     ' Handle x86
 
 Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\ISO_Files\x86\Sources\boot.wim" + CHR$(34)_
- + " /index:2 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+ + " /index:2 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\WINPE_MOUNT" + CHR$(34)
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
     Cmd$ = "copy /B " + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT\setup.exe" + Chr$(34) + " " + Chr$(34) + DestinationFolder$ + "\ISO_Files\x86" + Chr$(34) + " /Y"
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
@@ -3474,15 +3415,15 @@ Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
     Cmd$ = "robocopy " + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT\Windows\System32" + Chr$(34) + " " + Chr$(34) + DestinationFolder$ + "\ISO_Files\x86\Sources" + Chr$(34) + " *.* /e /ndl /xo /xx /xl /np /r:0 /w:0 > NUL"
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
-    Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /Mountdir:" + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT" + Chr$(34) + " /discard /LogPath=" + Chr$(34) + DestinationFolder$ + "\Logs\dism.log" + Chr$(34)
+    Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /Mountdir:" + Chr$(34) + DestinationFolder$ + "\WINPE_MOUNT" + Chr$(34) + " /discard" + Chr$(34)
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
 Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Mount-Image /ImageFile:" + CHR$(34) + DestinationFolder$ + "\ISO_Files\x86\Sources\install.wim" + CHR$(34)_
- + " /index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\MOUNT" + CHR$(34) + " /LogPath=" + CHR$(34) + DestinationFolder$ + "\Logs\dism.log" + CHR$(34)
+ + " /index:1 /Mountdir:" + CHR$(34) + DestinationFolder$ + "\MOUNT" + CHR$(34)
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
     Cmd$ = "robocopy " + Chr$(34) + DestinationFolder$ + "\MOUNT\Windows\System32" + Chr$(34) + " " + Chr$(34) + DestinationFolder$ + "\ISO_Files\x86\Sources" + Chr$(34) + " *.* /e /ndl /xo /xx /xl /np /r:0 /w:0 > NUL"
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
-    Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /Mountdir:" + Chr$(34) + DestinationFolder$ + "\MOUNT" + Chr$(34) + " /discard /LogPath=" + Chr$(34) + DestinationFolder$ + "\Logs\dism.log" + Chr$(34)
+    Cmd$ = Chr$(34) + DISMLocation$ + Chr$(34) + " /Unmount-Image /Mountdir:" + Chr$(34) + DestinationFolder$ + "\MOUNT" + Chr$(34) + " /discard" + Chr$(34)
     Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
 End If
@@ -3513,8 +3454,8 @@ Select Case InjectionMode$
 End Select
 
 If _FileExists(DestinationFolder$ + "\ISO_Files\autounattend.xml") Then
-    AnswerFilePresent = "Y"
-Else AnswerFilePresent = "N"
+    AnswerFilePresent$ = "Y"
+Else AnswerFilePresent$ = "N"
 End If
 
 Do
@@ -3530,15 +3471,8 @@ Loop While Midnight = 1
 
 Cmd$ = CHR$(34) + OSCDIMGLocation$ + CHR$(34) + " -t" + CurrentTime$ + " -m -o -u2 -udfver102 -bootdata:2#p0,e,b" + CHR$(34) + DestinationFolder$_
  + "\ISO_Files\boot\etfsboot.com" + CHR$(34) + "#pEF,e,b" + CHR$(34) + DestinationFolder$ + "\ISO_Files\efi\microsoft\boot\efisys.bin"_
- + CHR$(34) + " " + CHR$(34) + DestinationFolder$ + "\ISO_Files" + CHR$(34) + " " + CHR$(34) + FinalImageName$ + CHR$(34) +_
- " >> " + CHR$(34) + DestinationFolder$ + "\logs\OSCDIMG.log" + CHR$(34) + " 2>&1"
-
-ff = FreeFile
-Open DestinationFolder$ + "\logs\OSCDIMG.log" For Output As #ff
-Print #ff, Cmd$
-Print #ff, ""
-Close #ff
-Shell Chr$(34) + Cmd$ + Chr$(34)
+ + CHR$(34) + " " + CHR$(34) + DestinationFolder$ + "\ISO_Files" + CHR$(34) + " " + CHR$(34) + FinalImageName$ + CHR$(34)
+Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 
 Select Case InjectionMode$
     Case "UPDATES"
@@ -3592,82 +3526,6 @@ Shell _Hide Cmd$
 Cmd$ = "rmdir " + Chr$(34) + DestinationFolder$ + "\Setup_DU_x86" + Chr$(34) + " /s /q"
 Shell _Hide Cmd$
 
-If ErrorsWereFound$ = "Y" Then
-
-    ' The lines of code below are used to create a new log file as a result of a known Microsoft issue that is causing a number of
-    ' false error messages to be logged. As a result of this, we parse throgh all the errors that are being saved in the file
-    ' ERROR_SUMMARY.log and strip off the known false errors. We then stuff the results into the file named SANITIZED_ERROR_SUMMARY.log.
-
-    ErrMsgFile1 = FreeFile
-    Open DestinationFolder$ + "\logs\ERROR_SUMMARY.log" For Input As #ErrMsgFile1
-    ErrMsgFile2 = FreeFile
-    Open DestinationFolder$ + "\logs\SANTIZED_ERROR_SUMMARY.log" For Output As #ErrMsgFile2
-    Do Until EOF(ErrMsgFile1)
-        Line Input #ErrMsgFile1, ErrMsg$(1)
-        If Left$(ErrMsg$(1), 8) = "Warning!" Then
-            For x = 2 To 4
-                Line Input #ErrMsgFile1, ErrMsg$(x)
-            Next x
-
-            ' Messages to strip from log
-
-            If InStr(ErrMsg$(4), "Matching binary") <> 0 And InStr(ErrMsg$(4), "missing for component") <> 0 Then
-                GoTo NoPrintSanitized
-            End If
-
-            If InStr(ErrMsg$(4), "Error 800f0984 [Warning,Facility=15 (0x000f),Code=2436 (0x0984)] originated in function ComponentStore") Then
-                GoTo NoPrintSanitized
-            End If
-
-            If InStr(ErrMsg$(4), "Registry overridable collision found") Then
-                GoTo NoPrintSanitized
-            End If
-
-            If InStr(ErrMsg$(4), "One of the components setting this value is Windows-Defender-Service") Then
-                GoTo NoPrintSanitized
-            End If
-
-            If InStr(ErrMsg$(4), "Previously seen component setting this value is Windows-Defender-Service") Then
-                GoTo NoPrintSanitized
-            End If
-
-            If InStr(ErrMsg$(4), "(hr:0xc1420117)") Then
-                GoTo NoPrintSanitized
-            End If
-
-            If InStr(ErrMsg$(4), "One of the components setting this value is Microsoft-Windows-Authentication-AuthUI-Component") Then
-                GoTo NoPrintSanitized
-            End If
-
-            If InStr(ErrMsg$(4), "Previously seen component setting this value is Microsoft-Windows-Authentication-AuthUI-Component") Then
-                GoTo NoPrintSanitized
-            End If
-
-            If InStr(ErrMsg$(4), "One of the components setting this value is Microsoft-Windows-Security-SPP") Then
-                GoTo NoPrintSanitized
-            End If
-
-            If InStr(ErrMsg$(4), "Previously seen component setting this value is Microsoft-Windows-Security-SPP") Then
-                GoTo NoPrintSanitized
-            End If
-
-            ' End of messages to strip from log
-
-            For x = 1 To 4
-                Print #ErrMsgFile2, ErrMsg$(x)
-            Next x
-            Print #ErrMsgFile2, ""
-
-            NoPrintSanitized:
-
-        End If
-
-    Loop
-    Close #ErrMsgFile2
-    Close #ErrMsgFile1
-
-End If
-
 ' Remove the AV exclusion for the destination folder
 
 CleanPath DestinationFolder$
@@ -3676,25 +3534,35 @@ Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
 If _FileExists("WIM_Exclude_Path.txt") Then Kill "WIM_Exclude_Path.txt"
 
 ' If the user opted to have a shutdown performed, then skip to the "ShutdownRequested" routine.
+' Set an initial value of 0 for ShutdownStatus. It will be set to 1 if a shutdown is requested, 2 if a
+' a hibernate is requested, or 3 if both are set. Having both set is considered an error condition and
+' no shutdown or hibernation will take place.
 
-If _FileExists(Environ$("userprofile") + "\Desktop\Auto_Shutdown.txt") Then GoTo shutdownrequested
+ShutdownStatus = 0
+
+If _FileExists(Environ$("userprofile") + "\Desktop\Auto_Shutdown.txt") Then ShutdownStatus = ShutdownStatus + 1
+If _FileExists(Environ$("userprofile") + "\Desktop\Auto_Hibernate.txt") Then ShutdownStatus = ShutdownStatus + 2
+
+Select Case ShutdownStatus
+    Case 0, 3
+        GoTo NoShutdown
+    Case 1, 2
+        GoTo ShutdownRequested
+End Select
 
 NoShutdown:
+
+' Since any script playback is now completed, we will flip the status of the variable ScriptingChoice$ to "S".
+' Normally, during playback of a script, we suppress pauses in the program with messages to the user. However,
+' now that playback has been completed, we may have some messages that we want the user to see. To avoid simply
+' skipping the pauses after these messages are displayed, we need to first change that variable so that the
+' pause routine will actually stop and pause.
+
+ScriptingChoice$ = "S"
 
 Cls
 Print
 Color 0, 10: Print "All processes have been completed.": Color 15
-
-If _FileExists(DestinationFolder$ + "\logs\SANITIZED_ERROR_SUMMARY.log") Then
-    Print
-    Print "It is suggested that you review the contents of the log file named ";: Color 10: Print "SANITIZED_ERROR_SUMMARY.log";: Color 15: Print " to make certain"
-    Print "that there were no unexpected errors."
-    Print
-    Print "You can find the log file here:"
-    Print
-    Color 10: Print DestinationFolder$; "\logs\SANITIZED_ERROR_SUMMARY.log": Color 15
-End If
-
 Pause
 
 If OpsPending$ = "Y" Then
@@ -3729,35 +3597,35 @@ End If
 
 ChDir ProgramStartDir$: GoTo BeginProgram
 
-shutdownrequested:
+ShutdownRequested:
 
-' User elected to have an automatic shutdown performed. We will give then one last opportunity to abort.
+' User elected to have an automatic shutdown or hibernation performed. We will give then one last opportunity to abort.
 
 Cls
 Print
 Color 0, 10: Print "All processes have been completed.": Color 15
 Print
-Print "An automatic shutdown of the system has been requested. You can abort the shutdown if you delete or rename the file"
 
-For x = 60 To 0 Step -1
-    _Limit 1
-    Locate 5, 1: Print "named ";: Color 10: Print "AUTO_SHUTDOWN.txt";: Color 15: Print " located on your desktop within the next";: Color 10: Print x;: Color 15: Print "seconds.  "
-    If Not (_FileExists(Environ$("userprofile") + "\Desktop\Auto_Shutdown.txt")) Then GoTo NoShutdown
-Next x
+Select Case ShutdownStatus
+    Case 1
+        Print "A shutdown of the system has been requested. You can abort the shutdown if you delete or rename the file named"
+        For x = 60 To 0 Step -1
+            _Limit 1
+            Locate 5, 1: Color 10: Print "AUTO_SHUTDOWN.txt";: Color 15: Print " located on your desktop within the next";: Color 10: Print x;: Color 15: Print "seconds.  "
+            If Not (_FileExists(Environ$("userprofile") + "\Desktop\Auto_Shutdown.txt")) Then GoTo NoShutdown
+        Next x
+    Case 2
+        Print "A hibernation of the system has been requested. You can abort the hibernation if you delete or rename the file named"
+        For x = 60 To 0 Step -1
+            _Limit 1
+            Locate 5, 1: Color 10: Print "AUTO_HIBERNATE.txt";: Color 15: Print " located on your desktop within the next";: Color 10: Print x;: Color 15: Print "seconds.  "
+            If Not (_FileExists(Environ$("userprofile") + "\Desktop\Auto_Hibernate.txt")) Then GoTo NoShutdown
+        Next x
+End Select
 
 ff = FreeFile
 Open ("WIM_Shutdown_log.txt") For Output As #ff
 Print #ff, "Program run was completed on "; Date$; " at "; Time$
-
-If _FileExists(DestinationFolder$ + "\logs\SANITIZED_ERROR_SUMMARY.log") Then
-    Print #ff, ""
-    Print #ff, "It is suggested that you review the contents of the log file named SANITIZED_ERROR_SUMMARY.log to make certain"
-    Print #ff, "that there were no unexpected errors."
-    Print #ff, ""
-    Print #ff, "You can find the log file here:"
-    Print #ff, ""
-    Print #ff, DestinationFolder$; "\logs\SANITIZED_ERROR_SUMMARY.log"
-End If
 
 If OpsPending$ = "Y" Then
     Print #ff, ""
@@ -3786,7 +3654,14 @@ If AnswerFilePresent$ = "Y" Then
 End If
 
 Close #ff
-Shell _Hide "shutdown /s /t 5 /f"
+
+Select Case ShutdownStatus
+    Case 1
+        Shell _Hide "shutdown /s /t 5 /f"
+    Case 2
+        Shell _Hide "shutdown /h"
+End Select
+
 GoTo EndProgram
 
 
@@ -7106,21 +6981,10 @@ Print "Creating final image."
 Print
 Print "Please standby..."
 
-' Delay creation of the final image if we are within 2 seconds of midnight. This will prevent a possible situation
-' where we grab the date, the time crosses midnight, and then we grab the time which is actually in a new day.
+' Unlike the routines where we alter the time of the files, since we are simply converting ESD to WIM in this routine, we will
+' keep the original timestamps and won't alter them here.
 
-Do
-    _Limit 10
-    CurrentTime$ = Date$ + "," + Left$(Time$, 5)
-    Select Case Right$(CurrentTime$, 8)
-        Case "23:59:58", "23:59:59"
-            Midnight = 1
-        Case Else
-            Midnight = 0
-    End Select
-Loop While Midnight = 1
-
-Cmd$ = Chr$(34) + OSCDIMGLocation$ + Chr$(34) + " -t" + CurrentTime$ + " -m -o -u2 -udfver102 -bootdata:2#p0,e,b" + Chr$(34) + DestinationFolder$_
+Cmd$ = Chr$(34) + OSCDIMGLocation$ + Chr$(34) + " -m -o -u2 -udfver102 -bootdata:2#p0,e,b" + Chr$(34) + DestinationFolder$_
  + "\ISO_Files\boot\etfsboot.com" + Chr$(34) + "#pEF,e,b" + Chr$(34) + DestinationFolder$ + "\ISO_Files\efi\microsoft\boot\efisys.bin"_
  + Chr$(34) + " " + Chr$(34) + DestinationFolder$ + "\ISO_Files" + Chr$(34) + " " + Chr$(34) + FinalImageName$ + Chr$(34)
 
@@ -8392,7 +8256,7 @@ Print "    3) Responding to the program"
 Print "    4) Hard disk vs removable media"
 Print "    5) Reviewing log files"
 Print "    6) How answer files are handled"
-Print "    7) Auto shutdown and program pause"
+Print "    7) Auto shutdown, hibernation, and program pause"
 Print "    8) Antivirus exclusions"
 Print
 Color 0, 13
@@ -8444,8 +8308,8 @@ Print "System Requirements"
 Print "==================="
 Print
 Print "This program is a 64-bit program designed to work only on 64-bit systems. It is also designed to work with Windows ISO"
-Print "images that contain an install.wim file in the \sources folder, not an INSTALL.ESD. There is one exception which is"
-Print "addressed in the help sections related to those sections where it is applicable."
+Print "images that contain an install.wim file in the \sources folder, not an INSTALL.ESD. There are a couple of exceptions"
+Print "which are addressed in the help sections related to those sections where applicable."
 Print
 Print "This program requires the Windows ADK to be installed. Only the ";: Color 0, 10: Print "Deployment Tools";: Color 15: Print " component needs to be installed. The"
 Print "program will display a warning when it is started if the ADK is not installed. However, it will continue to operate"
@@ -8456,7 +8320,7 @@ Print "Run the program locally, not from a network location."
 Print
 Print "When operating on multiple editions of Windows in the same project (for example, Win 10 Pro, Home, Education editions,"
 Print "etc.), this program is designed to work with editions of the same version. For example, you do not want to mix version"
-Print "21H1 and 21H2 in the same project. Do NOT create ISO images that have Windows editions having different builds."
+Print "21H1 and 21H2 in the same project. Do ";: Color 0, 10: Print "NOT";: Color 15: Print " create ISO images that have Windows editions having different builds."
 Print
 Print "Disable QuickEdit Mode - The color of text in some places within the program may be displayed incorrectly if QuickEdit"
 Print "mode is enabled. You should disable QuickEdit mode by following these steps: Right-click on the title bar when the"
@@ -8519,12 +8383,12 @@ Print "==================="
 Print
 Print "The program maintains a keyboard buffer. As a result, a series of responses can simply be pasted into the program."
 Print
-Print "IMPORTANT: Because the program maintains a keyboard buffer, you should NOT press keys at random while the program is"
+Color 0, 10: Print "IMPORTANT:";: Color 15: Print " Because the program maintains a keyboard buffer, you should ";: Color 0, 10: Print "NOT";: Color 15: Print " press keys at random while the program is"
 Print "performing an operation and has focus. As soon as an operation is completed the keys you pressed will be processed."
 Print
 Print "However, the program now has a powerful script recording and playback tool. When you select the option to inject"
 Print "Windows updates, drivers, or boot-critical drivers, you will be given the option to record or playback a script. The"
-Print "scripts that you record will be saved to the folder in which the program is located as WIM_SCRIPT.TXT. If you wish to"
+Print "scripts that you record will be saved to the folder in which the program is located as ";: Color 0, 10: Print "WIM_SCRIPT.TXT";: Color 15: Print ". If you wish to"
 Print "record multiple scripts, make sure to rename your scripts to avoid overwriting them. Note that the scripts will include"
 Print "comments to make it easy for you to manually alter the scripts. Comments begin with two colons (::). You can add"
 Print "comments of your own if you wish. Any line that does not start with two colons is an actual response typed by the user."
@@ -8562,7 +8426,7 @@ Print "- A combination of the above: Separate each group with a space. Example: 
 Print
 Print "- The word "; Chr$(34); "ALL"; Chr$(34); ". This will automatically determine all available indices and select them."
 Print
-Print "IMPORTANT: Enter the index numbers from low to high. Don't specify a lower index number after a higher index number."
+Color 0, 10: Print "IMPORTANT:";: Color 15: Print " Enter the index numbers from low to high. Don't specify a lower index number after a higher index number."
 Print "The exception to this is the routine for reorganizing the contents of a Windows ISO image. Since the goal of this"
 Print "option is to reorder the Windows editions, it is okay to specify indices in any order."
 Pause
@@ -8593,26 +8457,17 @@ Print "==================="
 Print
 Print "After running routines that inject files into the Windows image, you should review log files to check for errors."
 Print
-Print "The most important log file is the "; Chr$(34); "SANITIZED_ERROR_SUMMARY.log"; Chr$(34); " file. Another log file, the "; Chr$(34); "ERROR_SUMMARY.log"; Chr$(34); " file is"
-Print "a summary of all errors generated by the use of the Microsoft DISM utility. At the time of this writing, Microsoft is"
-Print "aware that there are issues causing errors to be generated. As a result, you are certain to see errors in this log."
+Print "You will find a log named "; Chr$(34); "PendingOps.log"; Chr$(34); ". This log file will show any pending operations that were set to take place."
+Print "Pending opertions occur when certain updates are applied. As an example, if you enable NetFX3, your Windows edition will"
+Print "have a Pending Install operation. This will prevent DISM Image Cleanup operations from being able to run. The program"
+Print "will display a warning about this in the header if this condition is detected. Note that the program will continue to"
+Print "run, but you are probably best served by reapplying updates to images where Windows editions do not have pending"
+Print "operations. After the routine completes, you will also find a log file in the logs folder named "; Chr$(34); "PendingOps.log"; Chr$(34); "."
+Print "This log file will tell you what source file and index number(s) in that source had the pending operations."
 Print
-Print "The program now features a routine that will sanitize the log file and clean it up by removing errors that can be"
-Print "ignored. The results are found in the file "; Chr$(34); "SANITIZED_ERROR_SUMMARY.log"; Chr$(34); ". Normally, this is the only log file that you"
-Print "should need to monitor after any routine to update Windows editions has been run."
-Print
-Print "The original raw logs from DISM will have names such as dism.log_x64_1.txt. There will be one such log for each Windows"
-Print "edition updated, with the number after the second underscore representing the index number of that image. x86 editions"
-Print "of Windows will have x86 in the file name rather than x64. These files can be very large and you will not typically"
-Print "need to look at these. If you find errors in the SANITIZED_ERROR_SUMMARY.log, the errors listed there will reference"
-Print "the log file from which the error was taken and the timestamp of the error. You can then refer to that log file to"
-Print "review the error in the context of operations that were taking place at the time."
-Print
-Print "In addition, you will find log files with names such as "; Chr$(34); "x64_1UpdateResults.txt"; Chr$(34); ". These log files will allow you to see"
+Print "In addition, you will find log files with names such as x64_1_UpdateResults.txt. These log files will allow you to see"
 Print "what updates have been applied to your WIM images. One such log will be present for each edition present. Note that the"
 Print "number after the underscore will match the index number of that Windows edition in the final image."
-Print
-Print "Finally, the log named OSCDIMG.log will hold the results of the OSCDIMG utility used to create the final windows image."
 Pause
 GoTo GeneralHelp
 
@@ -8659,27 +8514,34 @@ Print "Auto Shutdown and Program Pause"
 Print "==============================="
 Print
 Print "For the routines that inject Windows updates, drivers, or boot critical drivers, you can choose to have the program"
-Print "automatically shut down the system when it is done running and you can pause the execution of the program to free up"
-Print "resources to other programs."
+Print "automatically shutdown or hibernate the system when it is done running. You can also pause the execution of the program"
+Print "to free up resources to other programs."
 Print
-Print "To have the program perform an automatic shutdown, create a file on your desktop named "; Chr$(34); "Auto_Shutdown.txt"; Chr$(34); ". If a file by"
-Print "that name exists, a shutdown will be performed when those routines have finished. To pause program execution, create a"
-Print "file on your desktop named "; Chr$(34); "WIM_Pause.txt"; Chr$(34); "."
+Print "To have the program perform an automatic SHUTDOWN, create a file on your desktop named "; Chr$(34); "Auto_Shutdown.txt"; Chr$(34); ". If a file by"
+Print "that name exists, a shutdown will be performed when the program is finished. Use "; Chr$(34); "Auto_Hibernate.txt"; Chr$(34); " if you would"
+Print "prefer hibernation. Having both files at the same time is invalid and then neither action will take place."
 Print
-Print "Note that for auto shutdown, you can change your mind at any time. The existence of this file will only cause a shutdown"
-Print "when the routine finishes running so you are free to create that file at any time even while the program is running, or"
-Print "you can delete / rename the file if you decide at some point that you do not want an automatic shutdown after all."
+Print "To pause program execution, create a file on your desktop named "; Chr$(34); "WIM_Pause.txt"; Chr$(34); ". If a file by that name exists, the"
+Print "program will pause at the next step in the update process. Note that you can have both a Auto_Shutdown.txt file or a"
+Print "Auto_Hibernate.txt file along with a WIM_Pause.txt file."
 Print
-Print "While the program is running, you will see a status indication on the upper right of the screen to remind you whether an"
-Print "automatic shutdown will occur or not. If program execution is paused, a flashing message will be displayed as a reminder"
-Print "that the program is paused. Note that when you make a change, the status will not update immediately. The status is"
-Print "updated each time the program advances to the next item in the displayed checklist. However, when the program is resumed"
-Print "by deleting or renaming the "; Chr$(34); "WIM_Pause.txt"; Chr$(34); " file, this status change will be reflected immediately."
+Print "Note that for auto shutdown and hibernation, you can change your mind at any time. The existence of this file will only"
+Print "take effect when the routine finishes running so you can create the file even while the program is running, or you can"
+Print "delete / rename the file if you decide at some point that you do not want an automatic shutdown / hibernation."
 Print
-Print "Note that when the system is shut down automatically, any status messages or warning that would normally be displayed"
-Print "will not be shown due to the shutdown. Instead, this information is logged to a file. The next time the program is run"
-Print "that information will be automatically displayed. After viewing this information, that file will be automatically"
-Print "deleted."
+Print "While the program is running, you will see a status indication on the upper right of the screen to remind you of the"
+Print "current status. If program execution is paused, a flashing message will be displayed as a reminder that the program is"
+Print "paused. Note that when you make a change, the status will not update immediately. The status is updated each time the"
+Print "program advances to the next item in the displayed checklist. However, when the program is resumed by deleting or"
+Print "renaming the "; Chr$(34); "WIM_Pause.txt"; Chr$(34); " file, this status change will be reflected immediately."
+Pause
+Cls
+Print "Note that when the system is shutdown or hibernated automatically, any status messages or warning that would normally be"
+Print "displayed will not be shown due to the shutdown or hibernation. Instead, this information is logged to a file. The next"
+Print "time the program is run, that information will be automatically displayed. After viewing this information, that file"
+Print "will be automatically deleted."
+Print
+Print "Note that none of these filenames are case sensitive."
 Pause
 GoTo GeneralHelp
 
@@ -8818,7 +8680,7 @@ Print "IMPORTANT: When downloading updates from the Microsoft Update Catalog, yo
 Print "dynamic updates. The Safe OS Dynamic Update and the Setup Dynamic Update are available only as dynamic updates. However,"
 Print "what may be confusing is that the Cumulative Update may be available as both a standard update AND a dynamic update."
 Print "For the purposes of this program, ";: Color 0, 10: Print "DO NOT";: Color 15: Print " use the dynamic version of the cumulative update. Instead, download the version"
-Print "that is NOT described as a dynamic update."
+Print "that is not described as a dynamic update."
 Pause
 GoTo HelpInjectUpdates
 
@@ -8851,7 +8713,7 @@ Pause
 Cls
 Print "Option 2: To create a Windows Boot Foundation ISO image perform these steps:"
 Print
-Print "The advantage of this method is that a Boot Foundation ISO image is small,less than 50 MB. This means that the huge dual"
+Print "The advantage of this method is that a Boot Foundation ISO image is small, less than 50 MB. This means that the huge dual"
 Print "architecture ISO image does not need to be kept."
 Print
 Print "   Download the dual architecture image as noted in option 1"
@@ -8859,7 +8721,7 @@ Print "   Copy all files and folders EXCEPT the x64 and x86 folder to a temporar
 Print "   Create an ISO image from the folders and files in the temporary location (this program has a routine to create a"
 Print "   generic ISO image that can be used for this). Make sure to put these files and folders at the root of the ISO image."
 Print
-Print "That ISO image is your Boot Foundation ISO image."
+Print "That ISO image is your Boot Foundation ISO image. Note that "; Chr$(34); "Boot Foundation Image"; Chr$(34); " is a term I have created."
 Print
 Print "At this point the dual architecture image is no longer needed. Feel free to discard it."
 Print
@@ -8917,7 +8779,7 @@ Print "MicroCode - Unlike the other folders, the program will take no action on 
 Print "merely a place to keep the latest MicroCode update file. We do this because the MicroCode updates do not apply to every"
 Print "CPU so this is a good place to keep it if it will not be used. If you want the program to update your Windows editions"
 Print "with the MicroCode update, simply copy the MicroCode update file from the \MicroCode folder to the \Other folder before"
-Print "running the program."
+Print "running the program and injecting the updates."
 Print
 Print "Other - Updates that do not fall into the category of any other folder here are placed into the \Other folder. These"
 Print "typically include .NET updates as an example. You can place multiple files in this folder, but you should save only the"
@@ -9181,8 +9043,7 @@ Print "This routine uses a method to create the bootable media that should allow
 Print "system allows booting from the type of media (thumb drive, SD card, external HD, SSD, etc.) that you are using. It"
 Print "should work with x86 and x64 systems, and systems that are BIOS based or UEFI based. For systems that will only boot"
 Print "from external media that is formatted with FAT, this boot method will work around the limitation of a 4 GB maximum file"
-Print "size. As a result, you do not need to break up large Windows image files into smaller pieces. If you are interested in"
-Print "obtaining any technical details on how this works, please send a private message to me (hsehestedt) on TenForums.com."
+Print "size. As a result, you do not need to break up large Windows image files into smaller pieces."
 Print
 Print "The first time that you make a drive bootable using this routine, you should choose the option to WIPE the disk. This"
 Print "will erase all data from the disk and properly prepare it. In the future, you can choose the REFRESH option which will"
@@ -9534,7 +9395,7 @@ Locate 3, 38
 Print " Program Help - Exit ";
 Locate 9, 1
 Color 15
-Print "Take a wild guess."
+Print "Take a wild guess what this does."
 Pause
 GoTo ProgramHelp
 
@@ -11133,7 +10994,7 @@ Sub GetWimInfo_Main (SourcePath$, GetWimInfo_Silent)
 
     Cmd$ = "echo * " + Version$ + "." + SP_Build$ + Space$(68 - ((Len(Version$) + Len(SP_Build$) + 1))) + "* >> Image_Info.txt"
     Shell Cmd$
-    Shell "echo *                                                                     * >> WIN_Info.txt"
+    Shell "echo *                                                                     * >> Image_Info.txt"
     Shell "echo * Note: It is assumed that all editions have the same build number    * >> Image_Info.txt"
     Shell "echo *********************************************************************** >> Image_Info.txt"
     Shell "echo. >> Image_Info.txt"
@@ -11301,11 +11162,7 @@ Sub AddUpdatesStatusDisplay (CurrentImage, TotalImages, StatusIndicator)
 
     Print
 
-    ' Option 1
-
-    ' The section of code below will display a message if the program detects pending installs in a Windows image. This section of code
-    ' needs to be modified if either "Option 2" or "Option 3" below are enabled because they will conflict with each other as they are
-    ' currently coded.
+    ' The section of code below will display a message if the program detects pending installs in a Windows image.
 
     Print OverallStatus$;
     If OpsPending$ = "Y" Then
@@ -11316,64 +11173,6 @@ Sub AddUpdatesStatusDisplay (CurrentImage, TotalImages, StatusIndicator)
     For x = 1 To Len(OverallStatus$)
         Print "*";
     Next x
-
-    ' The 3 lines below that are commented out were displaying text on the screen illogically. I've commented them out for now but
-    ' it should be okay to delete them permanently.
-
-    '    If ErrorsWereFound$ = "Y" Then
-    '        Print "                    ";: Color 10: Print "You can also review the ERROR_SUMMARY.log file now.": Color 15
-    '    End If
-
-    ' Option 2
-
-    ' +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-    ' NOTE: The section of code below was used to notify a user if errors were detected even prior to the completion of this routine. After each
-    ' edition of Windows was updated, we parse the DISM logs and look for errors. If errors were found, we would display this on the screen so that
-    ' the user could already begin looking at some log files because it could take a very long time for all editions to be processed if the user
-    ' queues up a lot of them. However, at the time of this writing, there is a problem with errors being logged that are not critical. This was
-    ' not the case previously. I have reported this situation to Microsoft, they are aware of it, and "may" fix it in the future. This was
-    ' several months ago already. Because of this problem, I am temporarily taking those message out. Please note that there is another message
-    ' at the end of this routine that we will leave in place. In addition, we have added code to try to filter out most of the messages that can
-    ' be ignored.
-
-    ' To re-enable error display, uncomment the lines below between the "**********" lines and then follow the steps in next comment.
-    ' **********
-
-    'PRINT OverallStatus$;
-    'IF ErrorsWereFound$ = "Y" THEN
-    '    PRINT "   ";: COLOR 4: PRINT "ERRORS DETECTED!";: COLOR 10: PRINT " More info will be displayed when routine is done.": COLOR 15
-    'ELSE
-    '    PRINT
-    'END IF
-    'FOR x = 1 TO LEN(OverallStatus$)
-    '    PRINT "*";
-    'NEXT x
-    'IF ErrorsWereFound$ = "Y" THEN
-    '    PRINT "                    ";: COLOR 10: PRINT "You can also review the ERROR_SUMMARY.log file now.": COLOR 15
-    'END IF
-
-    ' **********
-
-    ' End Option 2
-
-    'Option 3
-
-    ' To re-enable error display, comment out or remove the lines below between the "----------" lines.
-    ' ----------
-
-    'PRINT OverallStatus$
-    'FOR x = 1 TO LEN(OverallStatus$)
-    '    PRINT "*";
-    'NEXT x
-    'PRINT ""
-
-    ' ----------
-
-    ' End Option 3
-
-    ' +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
 
     ' Display program verion and progress info on the console title bar
 
@@ -12057,35 +11856,51 @@ Sub AddUpdatesStatusDisplay (CurrentImage, TotalImages, StatusIndicator)
     End Select
 
     ' Display the Auto Shutdown status. If a file named "Auto_Shutdown.txt" exists on the desktop, then the system will be
-    ' shutdown when the program is done running. Note that this file can be created or removed / renamed by the user even
-    ' while the program is running. The status will be updated in the display each time this status display routine is
-    ' updated, which ocurrs with the start of each new step in the update process.
+    ' shutdown when the program is done running. If a file named "Auto_Hibernate" is present on the desktop then the
+    ' system will hibernate. Note that this file can be created or removed / renamed by the user even while the program is
+    ' running. The status will be updated in the display each time this status display routine is updated, which ocurrs
+    ' with the start of each new step in the update process.
     '
     ' Also, check for the existance of a file named "WIM_PAUSE.txt" on the desktop. So long as that file exists, pause the
     ' execution of the program.
 
-    Locate 1, 95: Print "Auto Shutdown: ";
+    ShutdownStatus = 0
 
-    If _FileExists(Environ$("userprofile") + "\Desktop\Auto_Shutdown.txt") Then
-        Color 14, 4: Print "Enabled";: Color 15
-    Else
-        Color 10: Print "Disabled";: Color 15
-    End If
+    If _FileExists(Environ$("userprofile") + "\Desktop\Auto_Shutdown.txt") Then ShutdownStatus = ShutdownStatus + 1
+    If _FileExists(Environ$("userprofile") + "\Desktop\Auto_Hibernate.txt") Then ShutdownStatus = ShutdownStatus + 2
 
-    Locate 29, 1: Color 0, 10: Print "   Place a file named AUTO_SHUTDOWN.TXT on desktop to shutdown system when done or WIM_PAUSE.TXT to pause the program   ";
-    Locate 30, 1: Print "   Changes are reflected when progress advances to the next step                                                        ";: Color 15
+    Select Case ShutdownStatus
+        Case 0, 3
+            Locate 1, 95: Print "Auto Shutdown:  ";
+            Color 10: Print "Disabled";: Color 15
+            Locate 2, 95: Print "Auto Hibernate: ";
+            Color 10: Print "Disabled";: Color 15
+        Case 1
+            Locate 1, 95: Print "Auto Shutdown:  ";
+            Color 14, 4: Print "Enabled ";: Color 15
+            Locate 2, 95: Print "Auto Hibernate: ";
+            Color 10: Print "Disabled";: Color 15
+        Case 2
+            Locate 1, 95: Print "Auto Shutdown:  ";
+            Color 10: Print "Disabled";: Color 15
+            Locate 2, 95: Print "Auto Hibernate: ";
+            Color 14, 4: Print "Enabled ";: Color 15
+    End Select
+
+    Locate 29, 3: Color 0, 10: Print "  Place a file named AUTO_SHUTDOWN.TXT on desktop to shutdown system or AUTO_HIBERNATE.TXT to hibernate when done.  ";
+    Locate 30, 3: Print "  Use WIM_PAUSE.TXT to pause the program. Changes are reflected when progress advances to the next step.            ";: Color 15
 
     ' If the file "WIM_PAUSE.txt" exists on the desktop, pause program execution until
     ' that file is deleted or renamed.
 
     Do While _FileExists(Environ$("userprofile") + "\Desktop\WIM_PAUSE.txt")
-        Locate 2, 95: Color 14, 4: Print "PROGRAM EXECUTION PAUSED";: Color 15
+        Locate 3, 95: Color 14, 4: Print "PROGRAM EXECUTION PAUSED";: Color 15
         _Delay .5
-        Locate 2, 95: Print "PROGRAM EXECUTION PAUSED";
+        Locate 3, 95: Print "PROGRAM EXECUTION PAUSED";
         _Delay .5
     Loop
 
-    Locate 2, 95: Print "                        ";
+    Locate 3, 95: Print "                        ";
 
 End Sub
 
@@ -12204,54 +12019,6 @@ Sub DisplayFile (FileName$)
 
     Close #FileNum
 
-End Sub
-
-
-Sub FindDISMLogErrors_SingleFile (Path$, LogPath$)
-
-
-    ' Pass to this routine the full path including a file name of a DISM log file and it will scan the file for errors.
-    ' Pass the location of the log files as the second parameter.
-    ' If an error is found it will note this and will pass back to the main program a value of "Y" in DISM_Error_Found$.
-    ' It will also create a log file called ERROR_SUMMARY.log
-    ' NOTE: This routine does not check for the existance of the file being passed to it. You should check the validity of
-    ' the path and file before calling this routine.
-
-    DISM_Error_Found$ = "N"
-    Dim ff As Long ' Hold the next open Free File number
-    Dim ff2 As Long ' Used to get a file number for the 2nd file that needs to be open at the same time
-    Dim Position1 As Double
-    Position1 = 0
-    Dim Position2 As Double
-    Dim StartOfError As Double
-    Dim LogFile As String
-    Dim ErrorMessage As String
-
-    ' Init variables
-
-    ff = FreeFile
-    Open Path$ For Binary As #ff
-    LogFile$ = Space$(LOF(ff))
-    Get #ff, 1, LogFile$
-    Close #ff
-
-    Do
-        Position1 = InStr(Position1 + 1, LogFile$, "Error                 ")
-        If Position1 Then
-            StartOfError = Position1 - 21
-            Position2 = InStr(StartOfError, LogFile$, (Chr$(13) + Chr$(10)))
-            ErrorMessage$ = Mid$(LogFile$, StartOfError, (Position2 - StartOfError))
-            DISM_Error_Found$ = "Y"
-            ff2 = FreeFile
-            Open (LogPath$ + "\ERROR_SUMMARY.log") For Append As #ff2
-            Print #ff2, "Warning! Error was reported in the log file named:"
-            Print #ff2, Path$
-            Print #ff2, "The error reported is:"
-            Print #ff2, ErrorMessage$
-            Print #ff2, ""
-            Close #ff2
-        End If
-    Loop Until Position1 = 0
 End Sub
 
 
@@ -13779,4 +13546,37 @@ End Sub
 ' 20.0.3.202 - March 21, 2022
 ' At the last moment prior to compiling the last release, we accidentally introduced a bug causing the final image to not be created in the
 ' new routine that converts ESD images into WIM images. This has been fixed.
+'
+' 20.0.4.203 - March 21, 2022
+' This update contains no change in functionality.  A few messages in the help sections were updated to make the messages clearer.
+'
+' 20.0.5.204 - March 23, 2022
+' Completely revised the logging to make it far simpler. Logs were sometimes being generated that were 600MB+ in size and this was
+' simply getting out of hand. We have also made one small change to the behavior of the routine that converts ESD files to WIM. Since
+' we are simply performing a conversion and not altering the image in any other way, we are no longer altering the timestamp of files
+' when we create the final ISO image.
+'
+' 20.1.0.205 - March 26, 2022
+' In a little further refinement of the logging, we cleaned up some messages related to logging. In addition, we have enhanced the auto
+' shutdown capability by adding the ability to hibernate rather than a shutdown. This is implemented by the user placing either an
+' auto_shutdown.txt or an auto_hibernate file on the desktop.
+'
+' In addition, we found that when updates were injected into images by running a script, some important messages at the end of the
+' program execution could be skipped since script playback skips all pauses where messages would normally be displayed to the user.
+' This has been corrected.
+'
+' 20.1.1.206 - March 28, 2022
+' No functionality changes. Previously, the initial variable declarations separated the variables declared as SHARED from those that were
+' not. For sake of ease, these were merged with the other variables. Now, to find a variable declaration we simply need to find it in the
+' list alphabetically since variables were already alphabetically arranged. We no longer need to look in more than one place.
+'
+' 20.1.2.207 - April 15, 2022
+' Made some changes to the startup of the program prior to the main menu being displayed. We now determine if the current version of the
+' program has ever been run before. If not, we display a message to the user encouraging them to review online help. In addition, we
+' instruct them to run the program elevated if self-elevation fails due to their system settings. Also fixed a small bug where a file
+' named Win_Info.txt was specified but it should have been Image_Info.txt. This did not not result in any functional issues, simply
+' an extremely minor cosmetic issue.
+'
+' 20.1.3.208 - May 9, 2022
+' No functional changes. Performed some extensive testing in preparation for a stable build release to GitHub.
 
