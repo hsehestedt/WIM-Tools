@@ -2,6 +2,32 @@
 * Changes in the Current Release *
 **********************************
 
+v21.1.1.219
+
+Major new version
+
+NEW: Added the ability to create a bootable disk that can contain as many different ISO images as you wish. These can include various versions of Windows as well as Windows PE and Windows RE based media.
+
+Bug Fix: The program was not working with paths and filenames that contain commas. This has been corrected.
+
+******************
+* Files affected *
+******************
+
+WIM_Tools.bas - QB64 Source Code
+WIM_Tools.exe - Compiled Executable
+WIM Tools User Guide.pdf (ELIMINATED - Help is now contained entirely within the program)
+
+The following files are unchanged:
+
+ISO.ico
+
+
+
+**********************
+* Previous Releases: *
+**********************
+
 v20.1.2.208
 
 Completely revised the logging subsystem to make it simpler. Logs were sometimes being generated that were 600MB+ in size and this was getting out of hand. We have also made one small change to the behavior of the routine that converts ESD files to WIM. Since we are simply performing a conversion and not altering the image in any other way, we are no longer altering the timestamp of files when we create the final ISO image.
@@ -17,24 +43,6 @@ Bug-fix: When updates were injected into an image using a script, some messages 
 Bug-fix: There was a piece of code where a wrong file name was referenced. This caused a minor cosmetic issue, no problem to program functionality was created by this.
 
 Documentation: We are eliminating the PDF documentation with this build. Everything needed is now built into the program itself so it eliminates the need for the separate documentation.
-
-******************
-* Files affected *
-******************
-
-WIM_Tools.bas - QB64 Source Code
-WIM_Tools.exe - Compiled Executable
-WIM Tools User Guide.pdf (ELIMINATED)
-
-The following files are unchanged:
-
-ISO.ico
-
-
-
-**********************
-* Previous Releases: *
-**********************
 
 v20.0.3.202
 
