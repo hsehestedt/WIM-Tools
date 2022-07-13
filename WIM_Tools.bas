@@ -1,5 +1,5 @@
 ' WIM (Windows Image Manager) Tools, Dual Architecture Edition
-' (c) 2021 by Hannes Sehestedt
+' (c) 2022 by Hannes Sehestedt
 
 ' Release notes can be found at the very end of the program
 
@@ -18,7 +18,7 @@ Option _Explicit
 Rem $DYNAMIC
 $ExeIcon:'iso.ico'
 $VersionInfo:CompanyName=Hannes Sehestedt
-$VersionInfo:FILEVERSION#=20,1,3,208
+$VersionInfo:FILEVERSION#=21,1,1,219
 $VersionInfo:ProductName=WIM Tools Dual Architecture Edition
 $VersionInfo:LegalCopyright=(c) 2022 by Hannes Sehestedt
 $Console:Only
@@ -62,8 +62,8 @@ Dim x As Integer ' Generic variable reused throughout program, mainly as a count
 Dim Shared ProgramVersion As String ' Holds the current program version. This is displayed in the console title throughout the program
 Dim ProgramReleaseDate As String
 
-ProgramVersion$ = "20.1.3.208"
-ProgramReleaseDate$ = "May 09, 2022"
+ProgramVersion$ = "21.1.1.219"
+ProgramReleaseDate$ = "Jul 11, 2022"
 
 
 ' ******************************************************************************************************************
@@ -195,8 +195,10 @@ Dim Other_Updates_Avail As String
 Dim OutputFileName As String ' For Windows multiboot image program, holds the final name of the ISO image to be created (file name and extension only, no path)
 Dim Override As String
 Dim ParSizeInMB As String ' Holds the size of a partition as a string
-Dim Par1InstancesFound As Integer
-Dim Par2InstancesFound As Integer
+Dim Par1MultiInstancesFound As Integer ' This and next 3 vars get a count of how many single ir multi image partitions exist in system
+Dim Par2MultiInstancesFound As Integer
+Dim Par1SingleInstancesFound As Integer
+Dim Par2SingleInstancesFound As Integer
 Dim PE_Files_Avail As String
 Dim Shared ProgramStartDir As String ' Holds the original starting location of the program
 Dim ProjectArchitecture As String ' In Multiboot program, hold the overall project architecture type (x86, x64, or DUAL)
@@ -217,6 +219,7 @@ Dim Shared Skip_PE_Updates As String ' if Set to "Y" we will not apply SSU and L
 Dim Silent As String
 Dim SingleImageTag As String
 Dim SingleImageCount As Integer
+Dim SingleOrMulti As String ' Set to "SINGLE" to create a single image boot disk or "MULTI" to create a multi image disk
 Dim Source As String ' Source file in an ESD to WIM conversion
 Dim SourceArcFlag As String
 Dim SourcePath As String ' Holds the path containing the files to be injected into an ISO image file
@@ -260,6 +263,9 @@ Dim VolumeLabel As String
 Dim VolumeName As String ' Used by the routine to create a generic ISO image to store the volume name that the user would like to assign to the image
 Dim WimInfo As String ' Holds lines of text as they are being read from WinInfo.txt file
 Dim WimInfoFound As Integer ' A flag used to indicate whether an index specified by user was found successfully in Image_Info.txt file
+Dim WinPEFound As Integer ' Set to 1 if Windows PE is installed, 0 if not installed
+Dim WinPELocation As String ' Holds the path to the WinPE installation location
+Dim WinPE_Temp As String
 Dim WipeOrRefresh As Integer
 Dim x64ExportCount As Integer
 Dim x86ExportCount As Integer
@@ -408,6 +414,7 @@ Open "ADKSearch.txt" For Input As #1
 
 ADKLocation$ = ""
 ADKFound = 0
+WinPEFound = 0
 
 Do
     Line Input #1, DISMLocation$
@@ -425,6 +432,12 @@ If ADKFound = 1 Then
     DISMLocation$ = ADKLocation$ + "Assessment and Deployment Kit\Deployment Tools\amd64\DISM\DISM.exe"
     OSCDIMGLocation$ = ADKLocation$ + "Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg\Oscdimg.exe"
     IMAGEXLocation$ = ADKLocation$ + "Assessment and Deployment Kit\Deployment Tools\amd64\DISM\ImageX.exe"
+    WinPELocation$ = ADKLocation$ + "Assessment and Deployment Kit\Windows Preinstallation Environment"
+    If _DirExists(WinPELocation$) Then
+        WinPEFound = 1
+    Else
+        WinPEFound = 0
+    End If
 End If
 
 If ADKFound = 0 Then
@@ -509,7 +522,7 @@ Print "    1) Inject Windows updates into one or more Windows editions and creat
 Print "    2) Inject drivers into one or more Windows editions and create a multi edition bootable image               "
 Print "    3) Inject boot-critical drivers into one or more Windows editions and create a multi edition bootable image "
 Color 0, 10
-Print "    4) Make or update a bootable drive from a Windows ISO image                                                 "
+Print "    4) Make or update a bootable drive from one or more Windows / WinPE / WinRE ISO images                      "
 Print "    5) Create a bootable Windows ISO image that can include multiple editions                                   "
 Print "    6) Create a bootable ISO image from Windows files in a folder                                               "
 Print "    7) Reorganize the contents of a Windows ISO image                                                           "
@@ -624,8 +637,6 @@ Select Case MenuSelection
         EiCfgHandling
         GoTo InjectUpdates
     Case 4
-        AutounattendHandling
-        EiCfgHandling
         GoTo MakeBootDisk
     Case 5
         ExcludeAutounattend$ = "Y"
@@ -718,7 +729,7 @@ Do
     Print "NOTE: You can specify a path and we will prompt you regarding each ISO image found there or you can specify a full path"
     Print "with an ISO image file name. ISO image file names ";: Color 0, 10: Print "MUST";: Color 15: Print " end with a .ISO file extension."
     Print
-    Input "Enter the path: ", SourceFolder$
+    Line Input "Enter the path: ", SourceFolder$
 
     If ScriptingChoice$ = "R" Then
         Print #5, ":: Path to one or more Windows images or full path with a file name:"
@@ -731,6 +742,10 @@ Do
     End If
 
 Loop While SourceFolder$ = ""
+
+CleanPath SourceFolder$
+SourceFolder$ = Temp$
+
 
 ' Determine if the source is a file name or a folder name.
 
@@ -1309,7 +1324,8 @@ Do
     Print "Enter the path where the project will be created. This is where all the temporary files will be stored and we will"
     Print "save the final ISO image file here as well."
     Print
-    Input "Enter the path where the project should be created: ", DestinationFolder$
+    Line Input "Enter the path where the project should be created: ", DestinationFolder$
+
     If ScriptingChoice$ = "R" Then
         Print #5, ":: Enter the path where the project will be created:"
         If DestinationFolder$ = "" Then
@@ -1493,7 +1509,7 @@ x64Updates$ = "" 'Set initial value
 If InjectionMode$ = "UPDATES" Then
     Do
         Cls
-        Input "Enter the path to the Windows update files: ", UpdatesLocation$
+        Line Input "Enter the path to the Windows update files: ", UpdatesLocation$
         If ScriptingChoice$ = "R" Then
             Print #5, ":: Enter the path to the Windows update files:"
             If UpdatesLocation$ = "" Then
@@ -1509,7 +1525,7 @@ End If
 If InjectionMode$ = "DRIVERS" Then
     Do
         Cls
-        Input "Enter the path to the drivers: ", UpdatesLocation$
+        Line Input "Enter the path to the drivers: ", UpdatesLocation$
         If ScriptingChoice$ = "R" Then
             Print #5, ":: Enter the path to the drivers:"
             If UpdatesLocation$ = "" Then
@@ -1525,7 +1541,7 @@ End If
 If InjectionMode$ = "BCD" Then
     Do
         Cls
-        Input "Enter the path to the boot-critical drivers: ", UpdatesLocation$
+        Line Input "Enter the path to the boot-critical drivers: ", UpdatesLocation$
         If ScriptingChoice$ = "R" Then
             Print #5, ":: Enter the path to the boot-critical drivers:"
             If UpdatesLocation$ = "" Then
@@ -1720,7 +1736,7 @@ UserSelectedImageName$ = "" ' Set initial value
 Print "If you would like to specify a name for the final ISO image file that this project will create, please do so now,"
 Print "WITHOUT an extension. You can also simply press ENTER to use the default name of Windows.ISO."
 Print
-Print "Enter name ";: Color 0, 10: Print "WITHOUT";: Color 15: Print " an extension, or press ENTER: ";: Input "", UserSelectedImageName$
+Print "Enter name ";: Color 0, 10: Print "WITHOUT";: Color 15: Print " an extension, or press ENTER: ";: Line Input "", UserSelectedImageName$
 
 If UserSelectedImageName = "" Then
     UserSelectedImageName$ = "Windows.iso"
@@ -2254,9 +2270,15 @@ If (x64UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
 
         SkipWinPEx64:
 
-        ' Add combined LCU / SSU update to main OS (install.wim) if available
+        ' Add combined LCU / SSU update to main OS (install.wim) if available - Apply twice. Once for SSU, once for LCU
 
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 7
+
+        If LCU_Update_Avail$ = "Y" Then
+            Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /PackagePath="_
+            + CHR$(34) + x64Updates$ + "\LCU" + CHR$(34)
+            Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
+        End If
 
         If LCU_Update_Avail$ = "Y" Then
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /PackagePath="_
@@ -2548,9 +2570,15 @@ If (x86UpdateImageCount > 0 And InjectionMode$ = "UPDATES") Then
 
         SkipWinPEx86:
 
-        ' Add updates to main OS
+        ' Add updates to main OS - Do twice. Once to apply the SSU, once to apply the LCU.
 
         AddUpdatesStatusDisplay CurrentImage, TotalImages, 7
+
+        If LCU_Update_Avail$ = "Y" Then
+            Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /PackagePath="_
+            + CHR$(34) + x86Updates$ + "\LCU" + CHR$(34)
+            Shell _Hide Chr$(34) + Cmd$ + Chr$(34)
+        End If
 
         If LCU_Update_Avail$ = "Y" Then
             Cmd$ = CHR$(34) + DISMLocation$ + CHR$(34) + " /Add-Package /Image:" + CHR$(34) + DestinationFolder$ + "\mount" + CHR$(34) + " /PackagePath="_
@@ -3665,16 +3693,16 @@ End Select
 GoTo EndProgram
 
 
-' ************************************************************
-' * Make or update a bootable drive from a Windows ISO image *
-' ************************************************************
+' ***************************************************************************************
+' * Make or update a bootable drive from one or more Windows / WinPE / WinRE ISO images *
+' ***************************************************************************************
 
 MakeBootDisk:
 
-' This routine will allow you to create a bootable drive for installing Windows or
-' to be used as an emergency boot disk. The option to create one or more additional
-' generic partitions is also provided as is support for BitLocker in the single boot
-' image option.
+' This routine will allow you to create a bootable drive for installing Windows or to be used as an emergency
+' boot disk. It can also create a boot disk that can hold many Windows images as well as WinPE and WinRE based
+' images, allowing the user to select any one of those images for boot. The option to create one or more additional
+' generic partitions is also provided as is support for BitLocker encryption on those additional partitions.
 
 ' IMPORTANT: This routine has some code to allow the user to choose whether any partitions aside from the
 ' first partition should be created as NTFS or exFAT. If you want the program to just automatically
@@ -3691,10 +3719,45 @@ ReDim AutoUnlock(4) As String
 ReDim Letter(4) As String
 ReDim VolLabel(4) As String
 
-VolLabel(1) = "Partition 1"
-VolLabel(2) = "Partition 2"
-VolLabel(3) = "Partition 3"
-VolLabel(4) = "Partition 4"
+VolLabel(1) = "Volume 1"
+VolLabel(2) = "Volume 2"
+VolLabel(3) = "Volume 3"
+VolLabel(4) = "Volume 4"
+
+SingleOrMulti:
+
+SingleOrMulti$ = "" ' Set initial value
+
+Cls
+Print "Do you want to create a boot disk that boots a single Windows ISO image, or do you want the choice to boot from"
+Print "multiple different ISO images which can include WinPE or WinRE based media?"
+Print
+Print "Choose one:"
+Print
+Color 0, 10: Print "1)";: Color 15: Print " ";: Color 0, 14: Print "Create or refresh standard boot media that boots from a single Windows ISO image     "
+Color 0, 10: Print "2)";: Color 15: Print " ";: Color 0, 14: Print "Create or refresh universal boot media to boot from an unlimited number of ISO images": Color 15
+Print
+Input "Enter your selection by number: ", SingleOrMulti$
+
+Select Case SingleOrMulti$
+    Case "1"
+        SingleOrMulti$ = "SINGLE"
+        GoTo CreateSingleImageDisk
+    Case "2"
+        SingleOrMulti$ = "MULTI"
+        GoTo WipeOrRefresh
+    Case Else
+        Print
+        Color 14, 4: Print "Invalid selection!": Color 15
+        Print "Your selection was not valid. Please provide a valid response."
+        Pause
+        GoTo SingleOrMulti
+End Select
+
+CreateSingleImageDisk:
+
+AutounattendHandling
+EiCfgHandling
 
 ' Get Windows ISO path to copy to the thumb drive
 
@@ -3706,8 +3769,18 @@ Do
     Cls
     Print "Enter the full path including the file name for the Windows ISO image you want to copy to the drive."
     Print
-    Input "Enter the full path: ", MakeBootableSourceISO$
+    Line Input "Enter the full path: ", MakeBootableSourceISO$
 Loop While MakeBootableSourceISO$ = ""
+
+CleanPath MakeBootableSourceISO$
+MakeBootableSourceISO$ = Temp$
+
+If Not _FileExists(MakeBootableSourceISO$) Then
+    Cls
+    Print "We could not find the file that you specified. Please check the path and filename and try again."
+    Pause
+    GoTo GetSourceISOForMakeBoot
+End If
 
 ' If we reach this point, then the path provided is valid and the file name specified exists.
 
@@ -3745,6 +3818,8 @@ If Architecture = 0 Then
     ChDir ProgramStartDir$: GoTo BeginProgram
 End If
 
+WipeOrRefresh:
+
 ' If we reach this point, then the image specified by the user is valid.
 
 ' The user will now need to make a choice. They can configure a drive from scratch, creating all partitions and copying the
@@ -3759,12 +3834,15 @@ Do
     Print "You have two options:"
     Print
     Color 0, 10: Print "1)";: Color 15: Print " ";: Color 0, 14: Print "WIPE DISK:";: Color 15
-    Print " This will completely wipe the contents of a disk and configure it from scratch."
+    Print " This will completely wipe the contents of a disk and configure it from scratch. Use this the first time"
+    Print "   you are preparing a disk with this program."
     Print
     Color 0, 10: Print "2)";: Color 15: Print " ";: Color 0, 14: Print "REFRESH DISK:";: Color 15
-    Print " This will leave all partitions and data intact except the Windows installation partitions which will"
-    Print "   be updated and refreshed to match the ISO image you just specified. This option is intended only for disks"
-    Print "   previously initialized by this routine where a WIPE operation was performed."
+    Print " If you are booting a single Windows image, this option will allow you to replace that image with an"
+    Print "   updated image or a completely different image while leaving data on all other partitions alone. If you have chosen"
+    Print "   the option to create a disk allowing you to select from multiple images, then a refresh will update the customized"
+    Print "   Windows PE installation that makes this possible but it will leave everything else alone. Refresh is intended only"
+    Print "   for disks previously initialized by a WIPE operation using this program."
     Print
     Input "Which option do you want (1 or 2)"; WipeOrRefresh
 Loop Until (WipeOrRefresh = 1 Or WipeOrRefresh = 2)
@@ -3795,7 +3873,7 @@ If WipeOrRefresh = 1 And UserCanPickFS$ = "TRUE" Then
     End If
 End If
 
-If WipeOrRefresh = 1 GoTo AskForPartitions
+If WipeOrRefresh = 1 GoTo SelectADisk
 
 ' We arrive here if the user elected to perform a refresh
 
@@ -3807,15 +3885,19 @@ GetDriveInfo_FAT32:
 
 ' Initialize variables
 
-Par1InstancesFound = 0
-Par2InstancesFound = 0
+Par1SingleInstancesFound = 0
+Par2SingleInstancesFound = 0
+Par1MultiInstancesFound = 0
+Par2MultiInstancesFound = 0
 
 Restore DriveLetterData
 
 For x = 1 To 24
     Read MediaLetter$
-    If _FileExists(MediaLetter$ + ":\PAR1_MEDIA.WIM") Then
-        Par1InstancesFound = Par1InstancesFound + 1
+    If _FileExists(MediaLetter$ + ":\VOL1_S_MEDIA.WIM") Then
+        Par1SingleInstancesFound = Par1SingleInstancesFound + 1
+    ElseIf _FileExists(MediaLetter$ + ":\VOL1_M_MEDIA.WIM") Then
+        Par1MultiInstancesFound = Par1MultiInstancesFound + 1
     End If
 Next x
 
@@ -3823,16 +3905,43 @@ Restore DriveLetterData
 
 For x = 1 To 24
     Read MediaLetter$
-    If _FileExists(MediaLetter$ + ":\PAR2_MEDIA.WIM") Then
-        Par2InstancesFound = Par2InstancesFound + 1
+    If _FileExists(MediaLetter$ + ":\VOL2_S_MEDIA.WIM") Then
+        Par2SingleInstancesFound = Par2SingleInstancesFound + 1
+    ElseIf _FileExists(MediaLetter$ + ":\VOL2_M_MEDIA.WIM") Then
+        Par2MultiInstancesFound = Par2MultiInstancesFound + 1
     End If
 Next x
 
-If Par1InstancesFound = 1 And Par2InstancesFound = 1 Then
-    GoTo DetectBootMediaLetters
-Else
-    GoTo GetBootMediaDriveLetters
+' Check if ONLY the partitions for a single image type are found
+
+If Par1SingleInstancesFound = 1 And Par2SingleInstancesFound = 1 Then
+    If Par1MultiInstancesFound = 0 And Par2MultiInstancesFound = 0 Then
+        GoTo DetectBootMediaLetters
+    End If
 End If
+
+' Check if ONLY the partitions for a multi image type are found
+
+If Par1MultiInstancesFound = 1 And Par2MultiInstancesFound = 1 Then
+    If Par1SingleInstancesFound = 0 And Par2SingleInstancesFound = 0 Then
+        GoTo DetectBootMediaLetters
+    End If
+End If
+
+' We arrive here if an illegal state is reached (there are partitions for both single and multi image types
+' or we don't have both partitions for either).
+
+Cls
+Print "You have chosen to refresh a disk but we have encountered one of the following problems:"
+Print
+Print " 1) We were not able to find any previously created disk to refresh."
+Print " 2) We found more than one disk previously created by this program which prevents us from determining which to use."
+Print
+Print "Please correct this situation."
+Print
+Print "We will now return you to the main menu."
+Pause
+ChDir ProgramStartDir$: GoTo BeginProgram
 
 DetectBootMediaLetters:
 
@@ -3842,96 +3951,90 @@ DetectBootMediaLetters:
 
 Restore DriveLetterData
 
-For x = 1 To 24
-    Read MediaLetter$
-    If _FileExists(MediaLetter$ + ":\PAR1_MEDIA.WIM") Then
-        FAT32DriveLetter$ = MediaLetter$
-        Exit For
-    End If
-Next x
+If SingleOrMulti$ = "SINGLE" Then
 
-Restore DriveLetterData
+    For x = 1 To 24
+        Read MediaLetter$
+        If _FileExists(MediaLetter$ + ":\VOL1_S_MEDIA.WIM") Then
+            FAT32DriveLetter$ = MediaLetter$
+            GoTo CheckVol2_S
+        End If
+    Next x
 
-For x = 1 To 24
-    Read MediaLetter$
-    If _FileExists(MediaLetter$ + ":\PAR2_MEDIA.WIM") Then
-        exFATorNTFSdriveletter$ = MediaLetter$
-        Exit For
-    End If
-Next x
-
-GetBootMediaDriveLetters:
-
-' If Par1InstancesFound is equal 1 then we already have a valid drive letter so we will jump to the point where we do a check to make
-' sure that the drive contains valid data.
-
-If Par1InstancesFound = 1 Then GoTo TestPar1
-
-Cls
-Print "We need to know the drive letter of the partitions used to install Windows."
-Print
-Print "Please enter the ";: Color 0, 14: Print "FAT32";: Color 15: Print " partition drive letter (Partition #1). Enter only the letter (no colon): ";: Input "", FAT32DriveLetter$
-
-If Len(FAT32DriveLetter$) <> 1 Then
     Cls
-    Color 14, 4: Print "Invalid response!": Color 15
+    Print "You have elected to perform a refresh operation of a boot disk type for which we found no disk."
+    Print "Please ensure that you select the option (SINGLE or MULTI image type) that matches your disk."
     Print
-    Print "Please enter a drive letter only!"
+    Print "You will be returned to the main menu."
     Pause
-    GoTo GetDriveInfo_FAT32
+    ChDir ProgramStartDir$: GoTo BeginProgram
+
+    CheckVol2_S:
+
+    Restore DriveLetterData
+
+    For x = 1 To 24
+        Read MediaLetter$
+        If _FileExists(MediaLetter$ + ":\VOL2_S_MEDIA.WIM") Then
+            exFATorNTFSdriveletter$ = MediaLetter$
+            GoTo Continue_Refresh
+        End If
+    Next x
+
+    Cls
+    Print "You have elected to perform a refresh operation of a boot disk type for which we found no disk."
+    Print "Please ensure that you select the option (SINGLE or MULTI image type) that matches your disk."
+    Print
+    Print "You will be returned to the main menu."
+    Pause
+    ChDir ProgramStartDir$: GoTo BeginProgram
 End If
 
-TestPar1:
 
-Temp1$ = FAT32DriveLetter$ + ":\boot"
-Temp2$ = FAT32DriveLetter$ + ":\efi"
+If SingleOrMulti$ = "MULTI" Then
 
-If Not ((_DirExists(Temp1$)) Or (_DirExists(Temp2$))) Then
+    For x = 1 To 24
+        Read MediaLetter$
+        If _FileExists(MediaLetter$ + ":\VOL1_M_MEDIA.WIM") Then
+            FAT32DriveLetter$ = MediaLetter$
+            GoTo CheckVol2_M
+        End If
+    Next x
+
     Cls
-    Color 14, 4: Print "Warning!": Color 15
+    Print "You have elected to perform a refresh operation of a boot disk type for which we found no disk."
+    Print "Please ensure that you select the option (SINGLE or MULTI image type) that matches your disk."
     Print
-    Print "This does not seem to be a valid FAT32 boot partition. As a precation we check for the existance of certain"
-    Print "folders which we have not found. Please check to make sure you have chosen the correct drive."
+    Print "You will be returned to the main menu."
     Pause
-    GoTo GetDriveInfo_FAT32
+    ChDir ProgramStartDir$: GoTo BeginProgram
+
+    Restore DriveLetterData
+
+    CheckVol2_M:
+
+    For x = 1 To 24
+        Read MediaLetter$
+        If _FileExists(MediaLetter$ + ":\VOL2_M_MEDIA.WIM") Then
+            exFATorNTFSdriveletter$ = MediaLetter$
+            GoTo Continue_Refresh
+        End If
+    Next x
+
+    Cls
+    Print "You have elected to perform a refresh operation of a boot disk type for which we found no disk."
+    Print "Please ensure that you select the option (SINGLE or MULTI image type) that matches your disk."
+    Print
+    Print "You will be returned to the main menu."
+    Pause
+    ChDir ProgramStartDir$: GoTo BeginProgram
+
 End If
 
-GetDriveInfo_exFATorNTFS:
+Continue_Refresh:
 
-' If Par2InstancesFound is equal 1 then we already have a valid drive letter so we will jump to the point where we do a check to make
-' sure that the drive contains valid data.
-
-If Par2InstancesFound = 1 Then GoTo TestPar2
-
-Cls
-Print "Now, enter the second partition ";: Color 0, 14: Print "("; FSType$; ")";: Color 15: Print " drive letter. Enter only the letter (no colon): ";: Input "", exFATorNTFSdriveletter$
-
-If Len(exFATorNTFSdriveletter$) <> 1 Then
-    Cls
-    Color 14, 4: Print "Invalid response!": Color 15
-    Print
-    Print "Please enter a drive letter only!"
-    Pause
-    GoTo GetDriveInfo_exFATorNTFS
-End If
-
-TestPar2:
-
-Temp1$ = exFATorNTFSdriveletter$ + ":\x64\sources\install.wim"
-Temp2$ = exFATorNTFSdriveletter$ + ":\sources\install.wim"
-
-If Not ((_FileExists(Temp1$)) Or (_FileExists(Temp2$))) Then
-    Cls
-    Color 14, 4: Print "Warning!": Color 15
-    Print
-    Print "This does not seem to be a valid install partition. As a precation we check for the existance of certain"
-    Print "folders which we have not found. Please check to make sure you have chosen the correct drive."
-    Pause
-    GoTo GetDriveInfo_exFATorNTFS
-End If
-
-' When we arrive, then we have what appears to be valid drive letters. We will now mount the ISO image so that we can
-' refresh the thumb drive with the contents.
+' When we arrive here, then we have the drive letters for the disk to be refreshed. We will now mount the
+' ISO image so that we can refresh the drive.
 
 ' We already know the architecture of the ISO image being used for the refresh from the earlier mount of the image
 ' so there is no need to check it again. Architecture = 1 if it is a single architecture image, 2 if dual architecture
@@ -3940,11 +4043,14 @@ End If
 ' that this routine is expecting the drive letter of the FAT32 partition in Letter$(1) and the exFAT / NTFS partition
 ' in Letter$(2).
 
-' We will also format those partitions first to clar the current content
+' We will also format those partitions first to clear the current content
 
 ' We want to keep the exiting volume labels, but these are destroyed when we format the partitions. We will save the current volume labels
 ' and then restore them after the format.
 
+Cls
+Color 0, 10: Print "Disk to be refreshed has been automatically located.": Color 15
+Print
 Shell "vol " + FAT32DriveLetter$ + ": > temp.txt"
 Open "temp.txt" For Input As #1
 FileLength = LOF(1)
@@ -3971,9 +4077,6 @@ Else
     VolLabel$(2) = Mid$(VolLabel$(2), 23, ((InStr(VolLabel$(2), Chr$(13))) - 23))
 End If
 
-Cls
-Print "We are now preparing the partitions."
-
 ' Format partition 1
 
 Cmd$ = "format " + FAT32DriveLetter$ + ": /FS:FAT32 /Q /Y > NUL"
@@ -3983,19 +4086,19 @@ Shell Cmd$
 
 If VolLabel$(1) <> "" Then
     Cmd$ = "label " + FAT32DriveLetter$ + ": " + VolLabel$(1)
+    Shell Cmd$
 End If
 
-' Format partition 2
-
-Shell Cmd$
-Cmd$ = "format " + exFATorNTFSdriveletter$ + ": /FS:" + FSType$ + " /Q /Y > NUL"
-Shell Cmd$
-
-' Restore the volume label if the original volume label was not blank.
-
-If VolLabel$(2) <> "" Then
-    Cmd$ = "label " + exFATorNTFSdriveletter$ + ": " + VolLabel$(2)
+If SingleOrMulti$ = "SINGLE" Then
+    Cmd$ = "format " + exFATorNTFSdriveletter$ + ": /FS:" + FSType$ + " /Q /Y > NUL"
     Shell Cmd$
+
+    ' Restore the volume label if the original volume label was not blank.
+
+    If VolLabel$(2) <> "" Then
+        Cmd$ = "label " + exFATorNTFSdriveletter$ + ": " + VolLabel$(2)
+        Shell Cmd$
+    End If
 End If
 
 ReDim Letter(2) As String
@@ -4005,16 +4108,27 @@ Letter$(2) = exFATorNTFSdriveletter$
 
 GoTo DoneWithBitLocker
 
+SelectADisk:
+
 ' If the user picks the option to wipe the drive and set it up from scratch, then we come here.
 
-AskForPartitions:
+GoSub SelectDisk
+
+GoSub CheckTotalDiskSize
+
+' We are done with the variable ListOfDisks$. Let's free up the space it used by clearing it
+' becasue this variable could potentially contain a good amount of text.
+
+ListOfDisks$ = ""
+
+AskForAdditionalPartitions:
 
 AddPart$ = "" ' Set initial value
 
 Cls
-Print "We will create two partitions to facilitate making a boot disk that can be booted on both BIOS and UEFI based"
-Print "systems. If you want, additional partitions can be created to store other data. Please note that you can add"
-Print "a maximum of 2 additional partitions, for a total of 4 partitions."
+Print "We will create 2 partitions to facilitate making a boot disk that can be booted on both BIOS and UEFI based systems and"
+Print "that supports both x64 and x86 editions of Windows. If you wish, additional partitions can be created to store other"
+Print "data. Please note that this program supports a maximum of 2 additional partitions, for a total of 4 partitions."
 Print
 Input "Do you want to create additional partitions"; AddPart$
 
@@ -4027,7 +4141,7 @@ If AddPart$ = "X" Then
     Print
     Color 14, 4: Print "Please provide a valid response.": Color 15
     Pause
-    GoTo AskForPartitions
+    GoTo AskForAdditionalPartitions
 End If
 
 ' The user entered a valid response
@@ -4060,12 +4174,14 @@ End If
 ' especially dual architecture, a good amount of space is needed.
 
 Cls
-Print "On the next screen you will asked for partition sizes. Note that the first partition will always be created with"
-Print "a size of 2.5 GB. You should make the second partition large enough to hold your Windows image. For example, if"
-Print "your ISO image is 8 GB in size, make this partition at least 8 GB in size."
+Print "On the next screen you will be asked for partition sizes. Note that the first partition will always be created with a"
+Print "size of 2.5 GB. You should make the second partition large enough to hold your Windows image. If you are creating a"
+Print "disk that allows you to select from multiple images to be made bootable, then this partition needs to have enough room"
+Print "to store ALL of your images, PLUS the size of your single largest image because we will store an extracted copy of"
+Print "that image here."
 Print
-Print "TIP: If you plan to update your ISO image in the future, or use a different ISO image, you might want to create"
-Print "the second partition with plenty of free space to accomodate any larger images in the future."
+Print "TIP: You may want to make your second partition a bit larger than you currently need in case any of your images get"
+Print "larger in the future or if you want to add additional images."
 Pause
 
 PartitionSizes:
@@ -4157,6 +4273,8 @@ For x = 1 To AdditionalPartitions
     Cls
     If BitLockerFlag$(x + 2) = "Y" Then
         AskAboutAutoUnlock:
+        Color 0, 10: Print "BitLocker Drive Encryption Selected": Color 15
+        Print
         Input "Do you also want to autounlock this drive on this system"; AutoUnlock$(x + 2)
         If AutoUnlock$(x + 2) = "" Then GoTo ResponseIsValid2
         AutoUnlock$(x + 2) = UCase$(AutoUnlock$(x + 2))
@@ -4181,64 +4299,6 @@ Next x
 
 AfterBitLockerInfo:
 
-GoSub SelectDisk
-
-' We are done with the variable ListOfDisks$. Let's free up the space it used by clearing it.
-
-ListOfDisks$ = ""
-
-' We are now going to check to see if the selected disk is larger than 2 TB. If it is, then the user needs to either:
-
-' 1) Decide that no space above 2 TB is needed.
-' 2) Forfeit the ability to boot on a BIOS based system.
-
-' Initialize variables
-
-Cls
-Print "Check status of selected drive..."
-DiskIDSearchString$ = "Disk" + Str$(DiskID) + " "
-ff = FreeFile
-Open "TEMP.BAT" For Output As #ff
-Print #ff, "@echo off"
-Print #ff, "(echo list disk"
-Print #ff, "echo exit"
-Print #ff, ") | diskpart > diskpart.txt"
-Close #ff
-Shell "TEMP.BAT"
-If _FileExists("TEMP.BAT") Then Kill "TEMP.BAT"
-ff = FreeFile
-Open "diskpart.txt" For Input As #ff
-
-' Init variables
-
-AvailableSpaceString$ = ""
-Units$ = ""
-AvailableSpace = 0
-
-Do
-    Line Input #ff, ReadLine$
-
-    If InStr(ReadLine$, DiskIDSearchString$) Then
-        AvailableSpaceString$ = Mid$(ReadLine$, 28, 4)
-        Units$ = Mid$(ReadLine$, 33, 2)
-        Exit Do
-    End If
-
-Loop Until EOF(ff)
-
-Close #ff
-
-If _FileExists("diskpart.txt") Then Kill "diskpart.txt"
-If Units$ = "MB" Then Multiplier = 1
-If Units$ = "GB" Then Multiplier = 1024
-If Units$ = "TB" Then Multiplier = 1048576
-
-AvailableSpace = ((Val(AvailableSpaceString$)) * Multiplier)
-
-' Add up the size of partitions specified by user. The media needs to have more space than what user specified.
-' Since partition 1 will always be 2.5 GB we take the 2.5 GB as a starting point and then add the space specified
-' for any additional partitions that the user wants to add.
-
 ' Init variable
 
 TotalSpaceNeeded = 2560
@@ -4260,55 +4320,9 @@ If TotalSpaceNeeded > AvailableSpace Then
     ChDir ProgramStartDir$: GoTo BeginProgram
 End If
 
-' 2,097,152 = The number of MB in 2 TB.
-
-If (AvailableSpace > 2097152) Then
-
-    AskForOverride:
-
-    Cls
-    Print "Do you want to set an MBR override? Type HELP for information about this option."
-    Print
-
-    ' Set Initial Value
-
-    Override$ = ""
-
-    Do
-        Input "Do you wish to set an override"; Override$
-    Loop While Override$ = ""
-
-    If UCase$(Override$) = "HELP" Then
-        Cls
-        Print "You have selected a disk that is larger than 2TB."
-        Print
-        Print "The method used by this routine to make your disk bootable requires that the disk be initialized as MBR and not GPT."
-        Print "This means that the disk size will be limited to 2TB. If you use a disk with more than 2TB capacity, then you will"
-        Print "only be able to use 2TB of the space on that disk."
-        Print
-        Print "If you plan to boot this disk on only UEFI based systems, you can set an override. The program will then initialize"
-        Print "the disk as GPT and allow the use of more than 2TB space. Note that setting this option only affects the disk when"
-        Print "you completely initialize the disk. If you choose the option in the program to refresh your boot partitions, then"
-        Print "the disk will remain MBR or GPT (whatever it currently is)."
-        Pause
-        GoTo AskForOverride
-    End If
-
-    YesOrNo Override$
-    Override$ = YN$
-
-    If Override$ = "X" Then
-        Print
-        Color 14, 4: Print "Please provide a valid response.": Color 15
-        Pause
-        GoTo AskForOverride
-    End If
-
-End If
-
 Removable:
 
-' Write the commands to initialize the disk to the file named "TEMP.BAT"
+' Write the commands needed to initialize the disk to the file named "TEMP.BAT"
 
 ' NOTE: There is a problem where performing a "clean" in diskpart will sometimes fail the first time.
 ' It usually works the second time but in testing with batch files we have seen failures even on the
@@ -4356,8 +4370,8 @@ Next x
 Cls
 Print "Total number of volumes to prepare:";: Color 0, 10: Print TotalPartitions: Color 15
 Print
-Print "For each partition, please provide a volume label to assign to the partition. To accept the default name,"
-Print "simply press enter. For no volume label, enter the text "; Chr$(34); "NO-LABEL"; Chr$(34); "."
+Print "For each volume, please provide a label to be assigned to the volume. To accept the default name that is shown,"
+Print "simply press enter."
 Print
 
 For x = 1 To TotalPartitions
@@ -4385,14 +4399,10 @@ For x = 1 To TotalPartitions
         NewLabel = VolLabel$(x)
     End If
 
-    ' If user typed "NO-LABEL" then the new volume label willbe blank.
-
-    If UCase$(NewLabel$) = "NO-LABEL" Then NewLabel$ = ""
-
     ' If x=1 then we are working on the first volume label which is limited to 11 characters. Anything  after 1 will be either an exFAT partition
-    ' which also has an 11 character limit, or NTFS which is limited to 32 characters. We are using the variables "Row" "RowEnd and "Column" to position the cursor on the screen. We do
-    ' this because if the user enters an invalid value, we want erase the invalid response from the screen and move the prompt back to
-    ' the same place on the screen.
+    ' which also has an 11 character limit, or NTFS which is limited to 32 characters. We are using the variables "Row" "RowEnd and "Column" to
+    ' position the cursor on the screen. We do this because if the user enters an invalid value, we want erase the invalid response from the
+    ' screen and move the prompt back to the same place on the screen.
 
     Select Case x
         Case 1
@@ -4433,6 +4443,15 @@ For x = 1 To TotalPartitions
 
             End If
     End Select
+
+    ' Since the first volume is FAT32, note that FAT32 volumes only accept uppercase volume labels. The "label" command automatically converts any text to
+    ' uppercase, but to avoid comparison errors if try to compare a volume label entered by a user with the actual volume label, we will store the name in
+    ' uppercase in the variable.
+
+    If x = 1 Then
+        NewLabel$ = UCase$(NewLabel$)
+    End If
+
     If NewLabel$ <> "" Then
         VolLabel(x) = NewLabel$
     Else
@@ -4444,10 +4463,7 @@ For x = 1 To TotalPartitions
 Next x
 
 Cls
-Print
-Color 0, 10: Print "NOTE:";: Color 15: Print " If a message pops up saying that a disk needs to be formatted, please click "; Chr$(34); "Cancel"; Chr$(34); "."
-Print
-Print "Preparing disk. Note that this may take a while."
+Color 0, 10: Print "Performing initial preparation of the disk. Note that this may take a while.": Color 15
 Print
 Open "TEMP.BAT" For Output As #1
 Print #1, "@echo off"
@@ -4519,7 +4535,7 @@ For x = 3 To TotalPartitions
         Print #1, "echo ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
         Print #1, "echo :: We will wait a maximum of 180 seconds for BitLocker to initialize. ::"
         Print #1, "echo :: Typically, BitLocker will initialize much quicker, but we are      ::"
-        Print #1, "echo :: allowing time to accomodate very slow media.                       ::"
+        Print #1, "echo :: allowing time to allow very slow media to initialize.              ::"
         Print #1, "echo ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
         Print #1, "echo."
         Print #1, ""
@@ -4567,6 +4583,12 @@ Next x
 
 DoneWithBitLocker:
 
+' If the user wants to create a multi image media, jump to that code now.
+
+If SingleOrMulti$ = "MULTI" Then GoTo CreateMultiImageDisk
+
+' Creating single image media.
+
 Select Case Architecture
     Case 2
         Print "Creating a dual architecture boot"
@@ -4607,8 +4629,8 @@ Print #ff, "if %ERRORLEVEL% gtr 3 goto HandleError"
 Print #ff, "echo Copying files to partition #2"
 Print #ff, "robocopy "; CDROM$; "\sources "; Letter$(2); ":\sources /mir /njh /njs /xf boot.wim /256 > NUL"
 Print #ff, "if %ERRORLEVEL% gtr 3 goto HandleError"
-Print #ff, "echo. > "; Letter$(1); ":\PAR1_MEDIA.WIM"
-Print #ff, "echo. > "; Letter$(2); ":\PAR2_MEDIA.WIM"
+Print #ff, "echo. > "; Letter$(1); ":\VOL1_S_MEDIA.WIM"
+Print #ff, "echo. > "; Letter$(2); ":\VOL2_S_MEDIA.WIM"
 Print #ff, "goto cleanup"
 Print #ff, ":HandleError"
 Print #ff, "echo An error ocurred > WIM_File_Copy_Error.txt"
@@ -4736,30 +4758,809 @@ OpsCompleted:
 ' All operations are complete.
 
 Cls
-Print
 
 ' In order to display a more descriptive closing message, we need to know whether the user chose to wipe the entire disk
 ' or whether they simply chose to refresh the the image on a disk. The variable "WipeOrRefresh" will be set to 1 if they
-' chose to wipe the disk, or it will be 2 if they chose to perform a refresh.
+' elected to wipe the disk, or it will be 2 if they decided to perform a refresh.
 
 Select Case WipeOrRefresh
     Case 1
-        Print "The disk that you selected was wiped and two partitions were created for the purpose of making your Windows image"
-        Print "bootable."
-        Print
+        Print "The disk that you selected was prepared and 2 partitions were created to make your image(s) bootable."
 
         If AddPart$ = "Y" Then
-            Print AdditionalPartitions; "additional partition(s) were also created."
+            Print
+            Print Str$(AdditionalPartitions); " additional partition(s) were also created."
         End If
 
     Case 2
-        Print "The Windows image on your disk has been updated using the image that you provided. If the disk contains other"
-        Print "partitions, these were not altered in any way."
+        Print "The boot volume and supporting second volume have been refreshed. If the disk contains other volumes, these"
+        Print "were not altered in any way."
 End Select
 Pause
 
 ChDir ProgramStartDir$: GoTo BeginProgram
 
+CreateMultiImageDisk:
+
+If WinPEFound = 0 Then
+    Cls
+    Color 14, 4: Print "WARNING!": Color 15
+    Print
+    Print "We did not find the Windows PE add-on for the ADK installed on your system. This feature requires that component."
+    Pause
+    ChDir ProgramStartDir$: GoTo BeginProgram
+End If
+
+' User needs to select a disk to use. After calling the SelectDisk routine, the disk ID will be stored in the DiskID variable.
+
+GetPE_TempPath:
+
+' Ask for temp location - must not already exist
+
+Print "We need a temporary location to build a Windows PE image. Please enter a full path for a temporary location."
+Print
+Print "IMPORTANT: This location must NOT already exist. It will be created by the program and then deleted later."
+Print
+Line Input "Enter path: ", WinPE_Temp$
+
+CleanPath WinPE_Temp$
+WinPE_Temp$ = Temp$
+
+' Test to see if the folder already exists. If not, create it as a test, then delete it.
+
+If _DirExists(WinPE_Temp$) Then
+    Cls
+    Print "That directory already exists. Please supply a path that has not yet been created."
+    Pause
+    GoTo GetPE_TempPath
+End If
+
+Cmd$ = "MD " + Chr$(34) + WinPE_Temp$ + Chr$(34) + " > NUL"
+Shell Cmd$
+
+If _DirExists(WinPE_Temp$) Then
+    Cmd$ = "rd /S /Q " + Chr$(34) + WinPE_Temp$ + Chr$(34) + " > NUL"
+    Shell Cmd$
+Else
+    Cls
+    Print "That directory is not valid. Please try again."
+    Pause
+    GoTo GetPE_TempPath
+End If
+
+' Creating the three files we need for this project: Create_Disk.bat, startnet.cmd, Restore_Disk.bat
+
+ff = FreeFile
+Open "create_disk.bat" For Output As #ff
+
+Print #ff, "@echo off"
+Print #ff, "setlocal enabledelayedexpansion"
+Print #ff, "setlocal enableextensions"
+Print #ff, "cd /d %~dp0"
+Print #ff, "cls"
+Print #ff, ""
+Print #ff, "set ADK_Path="; ADKLocation$; "Assessment and Deployment Kit"
+Print #ff, "set PE_Temp="; WinPE_Temp$
+Print #ff, "set Vol1Size=2500"
+Print #ff, ""
+Print #ff, "REM Do not change the following variables. They build upon the variable "; Chr$(34); "ADK_Path"; Chr$(34); ", which you CAN change."
+Print #ff, ""
+Print #ff, "set PE_Path=%ADK_Path%\Windows Preinstallation Environment"
+Print #ff, "set DiskID="; LTrim$(Str$(DiskID))
+Print #ff, ""
+Print #ff, "REM Set the Deployment and Imaging Tools Environment"
+Print #ff, ""
+Print #ff, "pushd %ADK_Path%\Deployment Tools"
+Print #ff, "call DandISetEnv.bat"
+Print #ff, "popd"
+Print #ff, ""
+Print #ff, "echo ::::::::::::::::::::::::::::::"
+Print #ff, "echo :: Copying Windows PE Files ::"
+Print #ff, "echo ::::::::::::::::::::::::::::::"
+Print #ff, "echo."
+Print #ff, ""
+Print #ff, "cmd /c "; Chr$(34); Chr$(34); "%PE_Path%\copype"; Chr$(34); " amd64 "; Chr$(34); "%PE_Temp%"; Chr$(34); Chr$(34); " > NUL"
+Print #ff, ""
+Print #ff, "echo ::::::::::::::::::::::::::::::::::::::::"
+Print #ff, "echo :: Mounting the Windows PE Image File ::"
+Print #ff, "echo ::::::::::::::::::::::::::::::::::::::::"
+Print #ff, "echo."
+Print #ff, ""
+Print #ff, "DISM /Mount-Image /ImageFile:"; Chr$(34); "%PE_Temp%\media\sources\boot.wim"; Chr$(34); " /Index:1 /MountDir:"; Chr$(34); "%PE_Temp%\mount"; Chr$(34); " > NUL"
+Print #ff, ""
+Print #ff, "REM Add packages to Windows PE"
+Print #ff, ""
+Print #ff, "CLS"
+Print #ff, "echo Adding package 1 of 12 to Windows PE"
+Print #ff, "Dism /Add-Package /Image:"; Chr$(34); "%PE_Temp%\mount"; Chr$(34); " /PackagePath:"; Chr$(34); "%PE_Path%\amd64\WinPE_OCs\WinPE-WMI.cab"; Chr$(34); " > NUL"
+Print #ff, "CLS"
+Print #ff, "echo Adding package 2 of 12 to Windows PE"
+Print #ff, "Dism /Add-Package /Image:"; Chr$(34); "%PE_Temp%\mount"; Chr$(34); " /PackagePath:"; Chr$(34); "%PE_Path%\amd64\WinPE_OCs\en-us\WinPE-WMI_en-us.cab"; Chr$(34); " > NUL"
+Print #ff, "CLS"
+Print #ff, "echo Adding package 3 of 12 to Windows PE"
+Print #ff, "Dism /Add-Package /Image:"; Chr$(34); "%PE_Temp%\mount"; Chr$(34); " /PackagePath:"; Chr$(34); "%PE_Path%\amd64\WinPE_OCs\WinPE-NetFX.cab"; Chr$(34); " > NUL"
+Print #ff, "CLS"
+Print #ff, "echo Adding package 4 of 12 to Windows PE"
+Print #ff, "Dism /Add-Package /Image:"; Chr$(34); "%PE_Temp%\mount"; Chr$(34); " /PackagePath:"; Chr$(34); "%PE_Path%\amd64\WinPE_OCs\en-us\WinPE-NetFX_en-us.cab"; Chr$(34); " > NUL"
+Print #ff, "CLS"
+Print #ff, "echo Adding package 5 of 12 to Windows PE"
+Print #ff, "Dism /Add-Package /Image:"; Chr$(34); "%PE_Temp%\mount"; Chr$(34); " /PackagePath:"; Chr$(34); "%PE_Path%\amd64\WinPE_OCs\WinPE-Scripting.cab"; Chr$(34); " > NUL"
+Print #ff, "CLS"
+Print #ff, "echo Adding package 6 of 12 to Windows PE"
+Print #ff, "Dism /Add-Package /Image:"; Chr$(34); "%PE_Temp%\mount"; Chr$(34); " /PackagePath:"; Chr$(34); "%PE_Path%\amd64\WinPE_OCs\en-us\WinPE-Scripting_en-us.cab"; Chr$(34); " > NUL"
+Print #ff, "CLS"
+Print #ff, "echo Adding package 7 of 12 to Windows PE"
+Print #ff, "Dism /Add-Package /Image:"; Chr$(34); "%PE_Temp%\mount"; Chr$(34); " /PackagePath:"; Chr$(34); "%PE_Path%\amd64\WinPE_OCs\WinPE-PowerShell.cab"; Chr$(34); " > NUL"
+Print #ff, "CLS"
+Print #ff, "echo Adding package 8 of 12 to Windows PE"
+Print #ff, "Dism /Add-Package /Image:"; Chr$(34); "%PE_Temp%\mount"; Chr$(34); " /PackagePath:"; Chr$(34); "%PE_Path%\amd64\WinPE_OCs\en-us\WinPE-PowerShell_en-us.cab"; Chr$(34); " > NUL"
+Print #ff, "CLS"
+Print #ff, "echo Adding package 9 of 12 to Windows PE"
+Print #ff, "Dism /Add-Package /Image:"; Chr$(34); "%PE_Temp%\mount"; Chr$(34); " /PackagePath:"; Chr$(34); "%PE_Path%\amd64\WinPE_OCs\WinPE-StorageWMI.cab"; Chr$(34); " > NUL"
+Print #ff, "CLS"
+Print #ff, "echo Adding package 10 of 12 to Windows PE"
+Print #ff, "Dism /Add-Package /Image:"; Chr$(34); "%PE_Temp%\mount"; Chr$(34); " /PackagePath:"; Chr$(34); "%PE_Path%\amd64\WinPE_OCs\en-us\WinPE-StorageWMI_en-us.cab"; Chr$(34); " > NUL"
+Print #ff, "CLS"
+Print #ff, "echo Adding package 11 of 12 to Windows PE"
+Print #ff, "Dism /Add-Package /Image:"; Chr$(34); "%PE_Temp%\mount"; Chr$(34); " /PackagePath:"; Chr$(34); "%PE_Path%\amd64\WinPE_OCs\WinPE-DismCmdlets.cab"; Chr$(34); " > NUL"
+Print #ff, "CLS"
+Print #ff, "echo Adding package 12 of 12 to Windows PE"
+Print #ff, "Dism /Add-Package /Image:"; Chr$(34); "%PE_Temp%\mount"; Chr$(34); " /PackagePath:"; Chr$(34); "%PE_Path%\amd64\WinPE_OCs\en-us\WinPE-DismCmdlets_en-us.cab"; Chr$(34); " > NUL"
+Print #ff, ""
+Print #ff, "CLS"
+Print #ff, "echo :::::::::::::::::::::::::::::::::::::::::::::::::::::"
+Print #ff, "echo :: Adding a Custom startnet.cmd File to Windows PE ::"
+Print #ff, "echo :::::::::::::::::::::::::::::::::::::::::::::::::::::"
+Print #ff, "echo."
+Print #ff, ""
+Print #ff, "copy /B startnet.cmd "; Chr$(34); "%PE_Temp%\mount\windows\system32"; Chr$(34); " > NUL"
+Print #ff, ""
+Print #ff, "echo :::::::::::::::::::::::::::::::::::::::::::::::::"
+Print #ff, "echo :: Saving and Dismounting the Windows PE Image ::"
+Print #ff, "echo :::::::::::::::::::::::::::::::::::::::::::::::::"
+Print #ff, ""
+Print #ff, "DISM /Unmount-Image /MountDir:"; Chr$(34); "%PE_Temp%\mount"; Chr$(34); " /Commit > NUL"
+Print #ff, "echo."
+Print #ff, ""
+Print #ff, "echo ::::::::::::::::::::::::::::::::::"
+Print #ff, "echo :: Creating the Final Boot Disk ::"
+Print #ff, "echo ::::::::::::::::::::::::::::::::::"
+Print #ff, "echo."
+Print #ff, ""
+Print #ff, "if exist "; Chr$(34); "%temp%\WinPE_ISO_Image.ISO"; Chr$(34); " ("
+Print #ff, "del "; Chr$(34); "%temp%\WinPE_ISO_Image.ISO"; Chr$(34)
+Print #ff, ")"
+Print #ff, ""
+Print #ff, "cmd /c "; Chr$(34); Chr$(34); "%PE_Path%\MakeWinPEMedia"; Chr$(34); " /ISO "; Chr$(34); "%PE_Temp%"; Chr$(34); " %temp%\WinPE_ISO_Image.ISO"; Chr$(34); " > NUL 2>&1"
+Print #ff, ""
+Print #ff, "REM Mount the image."
+Print #ff, ""
+Print #ff, "powershell.exe -command "; Chr$(34); "Mount-DiskImage "; Chr$(34); "'%temp%\WinPE_ISO_Image.ISO'"; Chr$(34); " -PassThru | Get-Volume"; Chr$(34); " > MountInfo.txt"
+Print #ff, ""
+Print #ff, "REM Get drive letter (includes the colon)."
+Print #ff, "REM We need to skip 3 lines in order to read the 4th line of text in the MountInfo.txt file."
+Print #ff, ""
+Print #ff, "for /F "; Chr$(34); "skip=3 delims="; Chr$(34); " %%a in (MountInfo.txt) do ("
+Print #ff, "   set LineContents=%%a"
+Print #ff, "   goto Evaluate"
+Print #ff, ")"
+Print #ff, ""
+Print #ff, ":Evaluate"
+Print #ff, ""
+Print #ff, "REM We are done with MountInfo.txt. Delete it."
+Print #ff, ""
+Print #ff, "del MountInfo.txt"
+Print #ff, "set LineContents=%LineContents:~0,1%"
+Print #ff, "set MountedImageDriveLetter=%LineContents%:"
+Print #ff, "robocopy %MountedImageDriveLetter%\ "; Letter(1); ":\ /mir /xd "; Chr$(34); "System Volume Information"; Chr$(34); " $Recycle.bin > NUL"
+Print #ff, "powershell.exe -command "; Chr$(34); "Dismount-DiskImage "; Chr$(34); "'%temp%\WinPE_ISO_Image.ISO'"; Chr$(34); Chr$(34) + " > NUL"
+Print #ff, "copy /B Restore_Disk.bat "; Letter$(2); ":\ > NUL"
+Print #ff, "MD "; Chr$(34); Letter$(2); ":\ISO Images"; Chr$(34); " > NUL"
+Print #ff, "MD "; Chr$(34); Letter$(2); ":\Other"; Chr$(34); " > NUL"
+Print #ff, "echo. > "; Letter$(1); ":\VOL1_M_MEDIA.WIM"
+Print #ff, "echo. > "; Letter$(2); ":\VOL2_M_MEDIA.WIM"
+Print #ff, ""
+Print #ff, "echo ::::::::::::::::::::::::::"
+Print #ff, "echo :: Performing a Cleanup ::"
+Print #ff, "echo ::::::::::::::::::::::::::"
+Print #ff, "echo."
+Print #ff, ""
+Print #ff, "RD /S /Q "; Chr$(34); "%PE_Temp%"; Chr$(34); " > NUL"
+Print #ff, "del "; Chr$(34); "%temp%\WinPE_ISO_Image.ISO"; Chr$(34); " > NUL"
+
+Close #ff
+
+' Create the startnet.cmd file
+
+ff = FreeFile
+Open "startnet.cmd" For Output As #ff
+
+Print #ff, "@echo off"
+Print #ff, "setlocal enabledelayedexpansion"
+Print #ff, "setlocal enableextensions"
+Print #ff, "cd /d %~dp0"
+Print #ff, ""
+Print #ff, "REM Initialize networking and enable the High Performance power plan"
+Print #ff, ""
+Print #ff, "wpeinit"
+Print #ff, "powercfg /s 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"
+Print #ff, ""
+Print #ff, "REM Need to get the drive letters for the 2 volumes of the boot media"
+Print #ff, ""
+Print #ff, "cls"
+Print #ff, "echo Retrieving drive letters. Please standby..."
+Print #ff, "echo."
+Print #ff, ""
+Print #ff, "REM Finding drive letter for Volume 1"
+Print #ff, ""
+Print #ff, "FOR %%a IN (C D E F G H I J K L M N O P Q R S T U V W X Y Z) do ("
+Print #ff, ""
+Print #ff, "IF exist %%a: ("
+Print #ff, ""
+Print #ff, "FOR /F "; Chr$(34); "tokens=* USEBACKQ"; Chr$(34); " %%b IN (`vol %%a:`) DO ("
+Print #ff, "SET var=%%b"
+Print #ff, "set var=!var:~21,"; Str$(Len(VolLabel$(1))); "!"
+Print #ff, ""
+Print #ff, "if "; Chr$(34); "!var!"; Chr$(34); "=="; Chr$(34); VolLabel$(1); Chr$(34); " ("
+Print #ff, "set vol1=%%a"
+Print #ff, "goto Vol1Found"
+Print #ff, "         )"
+Print #ff, "      )"
+Print #ff, "   )"
+Print #ff, ")"
+Print #ff, ""
+Print #ff, "echo We could not find Volume 1. The program will now end."
+Print #ff, "pause"
+Print #ff, "goto End"
+Print #ff, ""
+Print #ff, ":Vol1Found"
+Print #ff, ""
+Print #ff, "REM Finding drive letter for Volume 2"
+Print #ff, ""
+Print #ff, "FOR %%a IN (C D E F G H I J K L M N O P Q R S T U V W X Y Z) do ("
+Print #ff, ""
+Print #ff, "IF exist %%a: ("
+Print #ff, ""
+Print #ff, "FOR /F "; Chr$(34); "tokens=* USEBACKQ"; Chr$(34); " %%b IN (`vol %%a:`) DO ("
+Print #ff, "SET var=%%b"
+Print #ff, "set var=!var:~21,"; Str$(Len(VolLabel$(2))); "!"
+Print #ff, ""
+Print #ff, "if "; Chr$(34); "!var!"; Chr$(34); "=="; Chr$(34); VolLabel$(2); Chr$(34); " ("
+Print #ff, "set vol2=%%a"
+Print #ff, "goto Vol2Found"
+Print #ff, "         )"
+Print #ff, "      )"
+Print #ff, "   )"
+Print #ff, ")"
+Print #ff, ""
+Print #ff, "echo We could not find Volume 2. The program will now end."
+Print #ff, "pause"
+Print #ff, "goto End"
+Print #ff, ""
+Print #ff, ":Vol2Found"
+Print #ff, ""
+Print #ff, "REM Verify that the ISO Images folder is not empty"
+Print #ff, ""
+Print #ff, "set cnt=0"
+Print #ff, "pushd "; Chr$(34); "%Vol2%:\ISO Images"; Chr$(34); ""
+Print #ff, "for %%a in (*.ISO) do set /a cnt+=1"
+Print #ff, "if %cnt%==0 ("
+Print #ff, "popd"
+Print #ff, "cls"
+Print #ff, "echo No ISO image files were found in "; Chr$(34); "%Vol2%:\ISO Images"; Chr$(34); ". Did you forget to place your images in that folder?"
+Print #ff, "echo."
+Print #ff, "echo Please correct this situation."
+Print #ff, "echo."
+Print #ff, "echo The program will end and the system will be rebooted when you press any key to continue."
+Print #ff, "echo If your system is configured to automatically reboot from the disk, remove it now."
+Print #ff, "echo."
+Print #ff, "pause"
+Print #ff, "cls"
+Print #ff, "echo Rebooting..."
+Print #ff, "Wpeutil reboot"
+Print #ff, "goto End"
+Print #ff, ")"
+Print #ff, "popd"
+Print #ff, ""
+Print #ff, "REM Ask user for the Windows image to deploy"
+Print #ff, ""
+Print #ff, ":GetImageName"
+Print #ff, ""
+Print #ff, "cls"
+Print #ff, ""
+Print #ff, "echo Below is a list of available ISO image files:"
+Print #ff, "echo."
+Print #ff, ""
+Print #ff, "set filechoice=0"
+Print #ff, "set count=0"
+Print #ff, "set "; Chr$(34); "choice_options="; Chr$(34); ""
+Print #ff, ""
+Print #ff, "for /F "; Chr$(34); "delims="; Chr$(34); " %%A in ('dir /a:-d /b "; Chr$(34); "%Vol2%:\ISO Images\*.iso"; Chr$(34); "') do ("
+Print #ff, ""
+Print #ff, "REM Increment the image file count"
+Print #ff, ""
+Print #ff, "set /a count+=1"
+Print #ff, ""
+Print #ff, "REM Add the file name to the options array"
+Print #ff, ""
+Print #ff, "set "; Chr$(34); "options[!count!]=%%A"; Chr$(34); ""
+Print #ff, ")"
+Print #ff, ""
+Print #ff, "REM Add the image file name to an array"
+Print #ff, ""
+Print #ff, "for /L %%A in (1,1,!count!) do echo [%%A] !options[%%A]!"
+Print #ff, ""
+Print #ff, "REM Ask the user to select an image"
+Print #ff, ""
+Print #ff, "echo."
+Print #ff, "set /p filechoice="; Chr$(34); "Enter the numer of the ISO image you wish to use: "; Chr$(34); ""
+Print #ff, ""
+Print #ff, ""
+Print #ff, "if %filechoice% LSS 1 ("
+Print #ff, "echo."
+Print #ff, "echo Please provide a valid response."
+Print #ff, "echo."
+Print #ff, "pause"
+Print #ff, "goto GetImageName"
+Print #ff, ")"
+Print #ff, ""
+Print #ff, "if %filechoice% GTR %count% ("
+Print #ff, "echo."
+Print #ff, "echo Please provide a valid response"
+Print #ff, "echo."
+Print #ff, "pause"
+Print #ff, "goto GetImageName"
+Print #ff, ")"
+Print #ff, ""
+Print #ff, "REM Set FileNameOnly to hold the name of the file without a path"
+Print #ff, "REM Set SourceISOImage to hold the full path, including the filename"
+Print #ff, ""
+Print #ff, "set FileNameOnly=!options[%filechoice%]!"
+Print #ff, "set SourceISOImage=%Vol2%:\ISO Images\!options[%filechoice%]!"
+Print #ff, ""
+Print #ff, "if not exist "; Chr$(34); "%SourceISOImage%"; Chr$(34); " ("
+Print #ff, "cls"
+Print #ff, "echo We could not find an image by that name. Please check the name and try again."
+Print #ff, "echo."
+Print #ff, "pause"
+Print #ff, "goto GetImageName"
+Print #ff, ")"
+Print #ff, ""
+Print #ff, "REM Create a backup of the files on the first volume for later recovery."
+Print #ff, ""
+Print #ff, "cls"
+Print #ff, "echo :::::::::::::::::::::::::::::::::::::::::::"
+Print #ff, "echo :: Creating a backup copy of the current ::"
+Print #ff, "echo :: Windows PE configuration.             ::"
+Print #ff, "echo :::::::::::::::::::::::::::::::::::::::::::"
+Print #ff, "echo."
+Print #ff, ""
+Print #ff, "robocopy %Vol1%:\ %Vol2%:\PE_Backup /mir /xd "; Chr$(34); "system volume information"; Chr$(34); " $recycle.bin > NUL"
+Print #ff, ""
+Print #ff, ":CopyFiles"
+Print #ff, ""
+Print #ff, "REM Mount the ISO image and copy the files to the flash drive. We only need the sources folder on the second volume. On the"
+Print #ff, "REM first volume, we want everything else. We also want the file called BOOT.WIM in the sources folder on the first"
+Print #ff, "REM volume. If there is an autounattend.xml present, move it to the second volume. Technically, this file can reside on"
+Print #ff, "REM either volume."
+Print #ff, ""
+Print #ff, "echo :::::::::::::::::::::::::::::"
+Print #ff, "echo :: Mounting selected image ::"
+Print #ff, "echo :::::::::::::::::::::::::::::"
+Print #ff, "echo."
+Print #ff, "echo The image to be deployed is: %FileNameOnly%"
+Print #ff, "echo."
+Print #ff, ""
+Print #ff, "REM Mount the image."
+Print #ff, ""
+Print #ff, "powershell.exe -command "; Chr$(34); "Mount-DiskImage "; Chr$(34); "'%SourceISOImage%'"; Chr$(34); " -PassThru | Get-Volume"; Chr$(34); " > MountInfo.txt"
+Print #ff, ""
+Print #ff, "REM Get drive letter (includes the colon)."
+Print #ff, "REM We need to skip 3 lines in order to read the 4th line of text in the MountInfo.txt file."
+Print #ff, ""
+Print #ff, "for /F "; Chr$(34); "skip=3 delims="; Chr$(34); " %%a in (MountInfo.txt) do ("
+Print #ff, "   set LineContents=%%a"
+Print #ff, "   goto Evaluate"
+Print #ff, ")"
+Print #ff, ""
+Print #ff, ":Evaluate"
+Print #ff, ""
+Print #ff, "REM We are done with MountInfo.txt. Delete it."
+Print #ff, ""
+Print #ff, "del MountInfo.txt"
+Print #ff, "set LineContents=%LineContents:~0,1%"
+Print #ff, "set MountedImageDriveLetter=%LineContents%:"
+Print #ff, ""
+Print #ff, "REM Start the file copies"
+Print #ff, ""
+Print #ff, "echo :::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
+Print #ff, "echo :: Copying files. This may take a considerable amount  ::"
+Print #ff, "echo :: of time, especially if your disk is slow. Please be ::"
+Print #ff, "echo :: patient and allow the process to complete.          ::"
+Print #ff, "echo :::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
+Print #ff, "echo."
+Print #ff, ""
+Print #ff, ":::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
+Print #ff, ":: Check to see if the selected image is a single or dual architecture Windows image or if it is ::"
+Print #ff, ":: a Windows PE based media. If file named \sources\install.eim or \sources\install.esd exists,  ::"
+Print #ff, ":: then we have a single architecture image. If not, check for the same files in a \x64\sources  ::"
+Print #ff, ":: folder. That would indicate a dual architecture image. Finally, if none of those files exist  ::"
+Print #ff, ":: but a \sources\boot.wim file exists, then we have a Windows PE based image.                   ::"
+Print #ff, "::                                                                                               ::"
+Print #ff, ":: For Windows images (not WinPE images), we will also add an ei.cfg file to the \sources        ::"
+Print #ff, ":: folder(s). The ei.cfg file will cause Windows setup to allow a user to select any edition of  ::"
+Print #ff, ":: Windows available in the image file. Without this file, if you are installing on a system     ::"
+Print #ff, ":: that shipped with Windows, setup will automatically start installing the same version of      ::"
+Print #ff, ":: Windows that the system originally shipped with. This is a problem if you have upgrade from   ::"
+Print #ff, ":: one edition to another, for example, from Home to Pro.                                        ::"
+Print #ff, ":::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
+Print #ff, ""
+Print #ff, "if exist %MountedImageDriveLetter%\sources\install.wim ("
+Print #ff, "set ImageType=Single"
+Print #ff, "goto CopySingle"
+Print #ff, ")"
+Print #ff, ""
+Print #ff, "if exist %MountedImageDriveLetter%\sources\install.esd ("
+Print #ff, "set ImageType=Single"
+Print #ff, "goto CopySingle"
+Print #ff, ")"
+Print #ff, ""
+Print #ff, "if exist %MountedImageDriveLetter%\x64\sources\install.wim ("
+Print #ff, "set ImageType=Dual"
+Print #ff, "goto CopyDual"
+Print #ff, ")"
+Print #ff, ""
+Print #ff, "if exist %MountedImageDriveLetter%\x64\sources\install.esd ("
+Print #ff, "set ImageType=Dual"
+Print #ff, "goto CopyDual"
+Print #ff, ")"
+Print #ff, ""
+Print #ff, "if exist %MountedImageDriveLetter%\sources\boot.wim ("
+Print #ff, "set ImageType=PE"
+Print #ff, "goto CopyPE"
+Print #ff, ")"
+Print #ff, ""
+Print #ff, "REM We reach this section only if no valid image was found."
+Print #ff, "REM We inform the user and delete the Windows PE backup that we created."
+Print #ff, ""
+Print #ff, "powershell.exe -command "; Chr$(34); "Dismount-DiskImage "; Chr$(34); "'%SourceISOImage%'"; Chr$(34); ""; Chr$(34); " > NUL"
+Print #ff, "cls"
+Print #ff, "echo The file specified does not appear to be a valid image."
+Print #ff, "pause"
+Print #ff, "RD /Q /S %Vol2%:\PE_Backup > NUL 2>&1"
+Print #ff, "goto End"
+Print #ff, ""
+Print #ff, ":CopySingle"
+Print #ff, ""
+Print #ff, "robocopy %MountedImageDriveLetter% %Vol1%:\ /mir /xd sources "; Chr$(34); "system volume information"; Chr$(34); " $recycle.bin /256 > NUL"
+Print #ff, "if %ERRORLEVEL% gtr 3 goto ErrorHandler1"
+Print #ff, "robocopy %MountedImageDriveLetter%\sources %Vol1%:\sources boot.wim /256 > NUL"
+Print #ff, "if %ERRORLEVEL% gtr 3 goto ErrorHandler1"
+Print #ff, "robocopy %MountedImageDriveLetter%\sources %Vol2%:\sources /mir /xf boot.wim /256 > NUL"
+Print #ff, "if %ERRORLEVEL% gtr 3 goto ErrorHandler2"
+Print #ff, "robocopy %Vol1%:\ %Vol2%:\ /mov autounattend.xml > NUL"
+Print #ff, "if %ERRORLEVEL% gtr 3 goto ErrorHandler2"
+Print #ff, ""
+Print #ff, "if not exist %Vol2%:\sources\ei.cfg ("
+Print #ff, "echo [CHANNEL] > %Vol2%:\sources\ei.cfg"
+Print #ff, "echo Retail >> %Vol2%:\sources\ei.cfg"
+Print #ff, ")"
+Print #ff, ""
+Print #ff, "goto DoneCopying"
+Print #ff, ""
+Print #ff, ":CopyDual"
+Print #ff, ""
+Print #ff, "robocopy %MountedImageDriveLetter% %Vol1%:\ /mir /xd sources x64 x86 "; Chr$(34); "system volume information"; Chr$(34); " $recycle.bin /256 > NUL"
+Print #ff, "if %ERRORLEVEL% gtr 3 goto ErrorHandler1"
+Print #ff, "robocopy %MountedImageDriveLetter%\x64\sources %Vol1%:\x64\sources boot.wim > NUL"
+Print #ff, "if %ERRORLEVEL% gtr 3 goto ErrorHandler1"
+Print #ff, "robocopy %MountedImageDriveLetter%\x86\sources %Vol1%:\x86\sources boot.wim > NUL"
+Print #ff, "if %ERRORLEVEL% gtr 3 goto ErrorHandler1"
+Print #ff, "robocopy "; Chr$(34); "%MountedImageDriveLetter%\x64\sources "; Chr$(34); " %Vol2%:\x64\sources /mir /xf boot.wim > NUL"
+Print #ff, "if %ERRORLEVEL% gtr 3 goto ErrorHandler2"
+Print #ff, "robocopy "; Chr$(34); "%MountedImageDriveLetter%\x86\sources "; Chr$(34); " %Vol2%:\x86\sources /mir /xf boot.wim > NUL"
+Print #ff, "if %ERRORLEVEL% gtr 3 goto ErrorHandler2"
+Print #ff, "robocopy %Vol1%:\ %Vol2%:\ /mov autounattend*.xml > NUL"
+Print #ff, "if %ERRORLEVEL% gtr 3 goto ErrorHandler2"
+Print #ff, ""
+Print #ff, "if not exist %Vol2%:\x64\sources\ei.cfg ("
+Print #ff, "echo [CHANNEL] > %Vol2%:\x64\sources\ei.cfg"
+Print #ff, "echo Retail >> %Vol2%:\x64\sources\ei.cfg"
+Print #ff, ")"
+Print #ff, ""
+Print #ff, "if not exist %Vol2%:\x86\sources\ei.cfg ("
+Print #ff, "echo [CHANNEL] > %Vol2%:\x86\sources\ei.cfg"
+Print #ff, "echo Retail >> %Vol2%:\x86\sources\ei.cfg"
+Print #ff, ")"
+Print #ff, ""
+Print #ff, "goto DoneCopying"
+Print #ff, ""
+Print #ff, ":CopyPE"
+Print #ff, ""
+Print #ff, "robocopy %MountedImageDriveLetter% %Vol1%:\ /mir /xd "; Chr$(34); "system volume information"; Chr$(34); " $recycle.bin /256 > NUL"
+Print #ff, "if %ERRORLEVEL% gtr 3 goto ErrorHandler1"
+Print #ff, "goto DoneCopying"
+Print #ff, ""
+Print #ff, ":DoneCopying"
+Print #ff, ""
+Print #ff, "echo :::::::::::::::::::::::::::::::::::::::::"
+Print #ff, "echo :: Copying of files has been completed ::"
+Print #ff, "echo ::                                     ::"
+Print #ff, "echo ::      Dismounting the image          ::"
+Print #ff, "echo :::::::::::::::::::::::::::::::::::::::::"
+Print #ff, "echo."
+Print #ff, ""
+Print #ff, "powershell.exe -command "; Chr$(34); "Dismount-DiskImage "; Chr$(34); "'%SourceISOImage%'"; Chr$(34); ""; Chr$(34); " > NUL"
+Print #ff, ""
+Print #ff, "if %ImageType%==Single goto SummarizeWinImage"
+Print #ff, "if %ImageType%==Dual goto SummarizeWinImage"
+Print #ff, "if %ImageType%==PE goto SummarizePEImage"
+Print #ff, ""
+Print #ff, ":SummarizeWinImage"
+Print #ff, ""
+Print #ff, "cls"
+Print #ff, "echo ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
+Print #ff, "echo :: Creation of the disk has completed. Press any key to reboot the system and ::"
+Print #ff, "echo :: boot from your selected image. If you need to press a hotkey to boot from  ::"
+Print #ff, "echo :: the disk, be prepared to do so.                                            ::"
+Print #ff, "echo ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
+Print #ff, "echo."
+Print #ff, ""
+Print #ff, "if exist %Vol2%:\autounattend.xml ("
+Print #ff, "echo :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
+Print #ff, "echo :: CAUTION^^! Your disk includes an unattended answer file ^(autounattend.xml^). If your ::"
+Print #ff, "echo :: system is configured to boot from the disk, Windows installation will begin       ::"
+Print #ff, "echo :: automatically. If your answer file is configured to wipe a disk^(s^), then this   ::"
+Print #ff, "echo :: will happen automatically with no warning. If it is NOT your intention to begin   ::"
+Print #ff, "echo :: installation now, please unplug the disk before you continue.                     ::"
+Print #ff, "echo :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
+Print #ff, "echo."
+Print #ff, ")"
+Print #ff, ""
+Print #ff, "pause"
+Print #ff, "cls"
+Print #ff, "echo Rebooting..."
+Print #ff, "Wpeutil reboot"
+Print #ff, "goto End"
+Print #ff, ""
+Print #ff, ":SummarizePEImage"
+Print #ff, ""
+Print #ff, "cls"
+Print #ff, "echo :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
+Print #ff, "echo :: Creation of the disk has completed. Press any key to reboot the   ::"
+Print #ff, "echo :: system and boot from the boot disk. If you need to press a hotkey ::"
+Print #ff, "echo :: to boot from the disk, be prepared to do so.                      ::"
+Print #ff, "echo :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
+Print #ff, "echo."
+Print #ff, "pause"
+Print #ff, "cls"
+Print #ff, "echo Rebooting..."
+Print #ff, "Wpeutil reboot"
+Print #ff, "goto End"
+Print #ff, ""
+Print #ff, ":::::::::::::::::::::::::::::"
+Print #ff, ":: Error Handling Routines ::"
+Print #ff, ":::::::::::::::::::::::::::::"
+Print #ff, ""
+Print #ff, ":ErrorHandler1"
+Print #ff, "cls"
+Print #ff, "echo There was an error copying files to volume #1. Please verify that volume #1 has sufficient space available."
+Print #ff, "echo Please correct this situation."
+Print #ff, "echo."
+Print #ff, "pause"
+Print #ff, "goto End"
+Print #ff, ""
+Print #ff, ":ErrorHandler2"
+Print #ff, "cls"
+Print #ff, "echo There was an error copying files to volume #2. Please verify that volume #2 has sufficient space available."
+Print #ff, "echo Please correct this situation."
+Print #ff, "echo."
+Print #ff, "goto End"
+Print #ff, ""
+Print #ff, ":End"
+Print #ff, "del %Vol1%:\VOL1_M_MEDIA.WIM"
+Print #ff, "del %Vol2%:\VOL2_M_MEDIA.WIM"
+
+Close #ff
+
+' As a safety precaution, before we build the Restore_Disk.bat file, we need to verify that the
+' volume labels for the first two volumes of our boot media are not blank. Blank labels can cause
+' unexpected results, possibly leading to data loss!
+
+If VolLabel$(1) = "" Or VolLabel$(2) = "" Then
+    Cls
+    Print "We have detected that either one or both of the volume labels for the first two volumes are configured as blank"
+    Print "labels. This is an invalid configuration which could lead to undetermined effects. For this reason we must"
+    Print "terminate the current operation."
+    Pause
+
+    ' Perform a cleanup and return to main menu.
+
+    If _FileExists("WinPE_ISO_Image.ISO") Then
+        Kill "WinPE_ISO_Image.ISO"
+    End If
+
+    If _FileExists("create_disk.bat") Then
+        Kill "create_disk.bat"
+    End If
+
+    If _FileExists("startnet.cmd") Then
+        Kill "startnet.cmd"
+    End If
+
+    If _FileExists("Restore_Disk.bat") Then
+        Kill "Restore_Disk.bat"
+    End If
+
+    ChDir ProgramStartDir$: GoTo BeginProgram
+End If
+
+' Create the Restore_Disk.bat file
+
+ff = FreeFile
+Open "Restore_Disk.bat" For Output As #ff
+
+Print #ff, "@echo off"
+Print #ff, "setlocal enabledelayedexpansion"
+Print #ff, "setlocal enableextensions"
+Print #ff, "cd /d %~dp0"
+Print #ff, ""
+Print #ff, "REM Need to get the drive letters for the 2 volumes of the boot media"
+Print #ff, ""
+Print #ff, "cls"
+Print #ff, "echo Retrieving drive letters. Please standby..."
+Print #ff, "echo."
+Print #ff, ""
+Print #ff, "REM Finding drive letter for Volume 1"
+Print #ff, ""
+Print #ff, "FOR %%a IN (C D E F G H I J K L M N O P Q R S T U V W X Y Z) do ("
+Print #ff, ""
+Print #ff, "IF exist %%a: ("
+Print #ff, ""
+Print #ff, "FOR /F "; Chr$(34); "tokens=* USEBACKQ"; Chr$(34); " %%b IN (`vol %%a:`) DO ("
+Print #ff, "SET var=%%b"
+Print #ff, "set var=!var:~21,"; Str$(Len(VolLabel$(1))); "!"
+Print #ff, ""
+Print #ff, "if "; Chr$(34); "!var!"; Chr$(34); "=="; Chr$(34); VolLabel$(1); Chr$(34); " ("
+Print #ff, "set vol1=%%a"
+Print #ff, "goto Vol1Found"
+Print #ff, "         )"
+Print #ff, "      )"
+Print #ff, "   )"
+Print #ff, ")"
+Print #ff, ""
+Print #ff, "echo We could not find Volume 1. The program will now end."
+Print #ff, "pause"
+Print #ff, "goto End"
+Print #ff, ""
+Print #ff, ":Vol1Found"
+Print #ff, ""
+Print #ff, "REM Finding drive letter for Volume 2"
+Print #ff, ""
+Print #ff, "FOR %%a IN (C D E F G H I J K L M N O P Q R S T U V W X Y Z) do ("
+Print #ff, ""
+Print #ff, "IF exist %%a: ("
+Print #ff, ""
+Print #ff, "FOR /F "; Chr$(34); "tokens=* USEBACKQ"; Chr$(34); " %%b IN (`vol %%a:`) DO ("
+Print #ff, "SET var=%%b"
+Print #ff, "set var=!var:~21,"; Str$(Len(VolLabel$(2))); "!"
+Print #ff, ""
+Print #ff, "if "; Chr$(34); "!var!"; Chr$(34); "=="; Chr$(34); VolLabel$(2); Chr$(34); " ("
+Print #ff, "set vol2=%%a"
+Print #ff, "goto Vol2Found"
+Print #ff, "         )"
+Print #ff, "      )"
+Print #ff, "   )"
+Print #ff, ")"
+Print #ff, ""
+Print #ff, "echo We could not find Volume 2. The program will now end."
+Print #ff, "pause"
+Print #ff, "goto End"
+Print #ff, ""
+Print #ff, ":Vol2Found"
+Print #ff, ""
+Print #ff, "cls"
+Print #ff, "echo :::::::::::::::::::::::::"
+Print #ff, "echo :: Restoring volume #1 ::"
+Print #ff, "echo :::::::::::::::::::::::::"
+Print #ff, "echo."
+Print #ff, ""
+Print #ff, "robocopy %Vol2%:\PE_Backup %Vol1%:\ /mir /xd "; Chr$(34); "system volume information"; Chr$(34); " $recycle.bin > NUL"
+Print #ff, ""
+Print #ff, "echo :::::::::::::::::::::::::"
+Print #ff, "echo :: Restoring volume #2 ::"
+Print #ff, "echo :::::::::::::::::::::::::"
+Print #ff, "echo."
+Print #ff, ""
+Print #ff, "RD /Q /S %Vol2%:\Sources > NUL 2>&1"
+Print #ff, "RD /Q /S %Vol2%:\x64\Sources > NUL 2>&1"
+Print #ff, "RD /Q /S %Vol2%:\x86\Sources > NUL 2>&1"
+Print #ff, "RD /Q /S %Vol2%:\PE_Backup > NUL 2>&1"
+Print #ff, ""
+Print #ff, "echo ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
+Print #ff, "echo :: Recreating tags to identify the disk as a multi image disk ::"
+Print #ff, "echo ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
+Print #ff, "echo."
+Print #ff, "echo. > %Vol1%:\VOL1_M_MEDIA.WIM"
+Print #ff, "echo. > %Vol2%:\VOL2_M_MEDIA.WIM"
+Print #ff, "echo ::::::::::::::::::::::::::"
+Print #ff, "echo :: Restoration complete ::"
+Print #ff, "echo ::::::::::::::::::::::::::"
+Print #ff, "echo."
+Print #ff, ""
+Print #ff, ":End"
+Print #ff, "pause"
+Print #ff, "End"
+
+Close #ff
+
+' Run the batch file that will create the boot disk for us
+
+Shell "create_disk.bat"
+
+' Cleanup the files created earlier. They are no longer needed.
+
+If _FileExists("create_disk.bat") Then
+    Kill "create_disk.bat"
+End If
+
+If _FileExists("startnet.cmd") Then
+    Kill "startnet.cmd"
+End If
+
+If _FileExists("Restore_Disk.bat") Then
+    Kill "Restore_Disk.bat"
+End If
+
+' Display usage instructions
+
+Cls
+Print "Disk creation has been completed."
+Print
+Color 0, 10: Print "Usage Instructions": Color 15
+Print
+Print "On the 2nd partition of the disk that we just created (the one with the volume label ";: Color 0, 14: Print VolLabel$(2);: Color 15: Print "),"
+Print "you will find a folder called ";: Color 0, 14: Print "ISO Images";: Color 15: Print ". Place any Windows ISO images that you may want to use for installation in"
+Print "this folder. In addition, you can place images of Windows PE or Windows RE based media here, for example, a Macrium"
+Print "Reflect boot disk or a Windows recovery disk."
+Print
+Print "You will also find a folder called ";: Color 0, 14: Print "Other";: Color 15: Print " here. This is a good place to save any other files, for example, a batch"
+Print "file to bypass Windows 11 system requirements, Windows answer files, notes you may need, etc."
+Print
+Print "You will need to boot twice from this disk. Note that some systems will give you an option to boot from any partition"
+Print "on the disk. Select the first partition."
+Print
+Color 0, 10: Print "First Boot": Color 15
+Print
+Print "On the first boot, you will be shown a list of all the ISO images that you placed in the ISO Images folder. You will"
+Print "select the image to be made bootable. The program will then make a backup of the current configuration so that it can"
+Print "restore this later. It will then reconfigure the disk to boot the selected image. You are now ready for boot #2."
+Print
+Color 0, 10: Print "Second Boot": Color 15
+Print
+Print "This time, the image that you selected will be booted."
+Pause
+Cls
+Color 0, 10: Print "Cleanup": Color 15
+Print
+Print "When you are done, run the ";: Color 0, 14: Print "Restore_Disk.bat";: Color 15: Print " located on the second partition. This will restore the disk to the state"
+Print "where it is ready for you to follow the usage instructions on this page all over again. Please note that you can run"
+Print "this batch file from within Windows on the local system or another system, or, if you do not have access to a system"
+Print "that can boot Windows, you can run this batch file from a command line while booted from this disk. You can press"
+Print "SHIFT + F10 to open a command prompt from which you can run the batch file."
+Print
+Print "TIP: If you are trying to locate the batch file while booted from the disk, it can be a little awkward because File"
+Print "Explorer is not available. As a workaround, from the command prompt, type NOTEPAD and press ENTER. Change"
+Print "Text documents (*.txt) to All files (*.*), and then use Notepad like a simple substitute for File Explorer."
+Print "Look for the volume with the volume label ";: Color 0, 14: Print VolLabel$(2);: Color 15: Print "."
+Print
+Print "Once you have located the correct drive right-click on the batch file (the .bat may not show in the file name), and"
+Print "select the option to run as administrator."
+Pause
+
+ChDir ProgramStartDir$: GoTo BeginProgram
+
+' Local subroutines follow
 
 ' Subroutine - Shows patition information.
 
@@ -4772,7 +5573,7 @@ Print "* PARTITION SIZES *"
 Print "*******************"
 Color 15
 Print
-Print "Partition #1:";: Color 0, 10: Print "   2.50 GB ";: Color 15: Print "(Holds boot files)"
+Print "Partition #1:";: Color 0, 10: Print "   2.50 GB ";: Color 15: Print " - Holds boot files"
 Print "Partition #2:";
 If PartitionSize$(2) = "" Then
     Color 14, 4: Print " NOT YET DEFINED ";: Color 15
@@ -4790,7 +5591,7 @@ Else
     Color 0, 10: Print Using "####.##"; TempValue;: Print " "; DisplayUnit$; " ";: Color 15
 End If
 
-Print "(Must be large enough to hold contents of Windows image)"
+Print " - Must be large enough to hold contents of your image file(s)"
 
 Select Case TotalPartitions
     Case 4
@@ -5079,6 +5880,121 @@ LetterAssignmentDone:
 
 Return
 
+
+' Local Subroutine
+
+CheckTotalDiskSize:
+
+' We are now going to check to see if the selected disk is larger than 2TB.
+
+' Before going to this subroutine, make sure that the following variables are set:
+' DiskID - The disk number to be checked
+' SingleOrMulti$: Set to "SINGLE" if project is a single Windows image or "MULTI" if multiple images are to be made available for boot
+
+' Initialize variables
+
+Cls
+Print "Check status of selected drive..."
+DiskIDSearchString$ = "Disk" + Str$(DiskID) + " "
+ff = FreeFile
+Open "TEMP.BAT" For Output As #ff
+Print #ff, "@echo off"
+Print #ff, "(echo list disk"
+Print #ff, "echo exit"
+Print #ff, ") | diskpart > diskpart.txt"
+Close #ff
+Shell "TEMP.BAT"
+If _FileExists("TEMP.BAT") Then Kill "TEMP.BAT"
+ff = FreeFile
+Open "diskpart.txt" For Input As #ff
+
+' Init variables
+
+AvailableSpaceString$ = ""
+Units$ = ""
+AvailableSpace = 0
+
+Do
+    Line Input #ff, ReadLine$
+
+    If InStr(ReadLine$, DiskIDSearchString$) Then
+        AvailableSpaceString$ = Mid$(ReadLine$, 28, 4)
+        Units$ = Mid$(ReadLine$, 33, 2)
+        Exit Do
+    End If
+
+Loop Until EOF(ff)
+
+Close #ff
+
+If _FileExists("diskpart.txt") Then Kill "diskpart.txt"
+If Units$ = "MB" Then Multiplier = 1
+If Units$ = "GB" Then Multiplier = 1024
+If Units$ = "TB" Then Multiplier = 1048576
+
+AvailableSpace = ((Val(AvailableSpaceString$)) * Multiplier)
+
+' If the user has chosen to create a multi image boot disk, then a disk larger than 2TB is not valid under any
+' circumstances. We will check the size of the disk now and if it is larger than 2TB and a multi image project
+' was selected we will inform the user of this, abandon all operations, and return to the main menu.
+'
+' If the project is a single image type, then there are options available that would allow for the use of a
+' disk larger than 2TB. In that case, we will present the user with these options.
+
+' Note the value 2,097,152 below = The number of MB in 2 TB.
+
+If (AvailableSpace > 2097152) Then
+
+    AskForOverride:
+
+    Cls
+    Print "Do you want to set an MBR override? Type ";: Color 0, 10: Print "HELP";: Color 15: Print " for information about this option."
+    Print
+
+    ' Set Initial Value
+
+    Override$ = ""
+
+    Do
+        Input "Do you wish to set an override"; Override$
+    Loop While Override$ = ""
+
+    If UCase$(Override$) = "HELP" Then
+        Cls
+        Print "You have selected a disk that is larger than 2TB."
+        Print
+        Print "The method used by this routine to make your disk bootable requires that the disk be initialized as MBR and not GPT."
+        Print "This means that the disk size will be limited to 2TB. If you use a disk with more than 2TB capacity, then you will"
+        Print "only be able to use 2TB of the space on that disk."
+        Print
+        Print "If you plan to boot this disk on only UEFI based systems, you can set an override. The program will then initialize"
+        Print "the disk as GPT and allow the use of more than 2TB space. Note that setting this option only affects the disk when"
+        Print "you completely initialize the disk. If you choose the option in the program to refresh your boot partitions, then"
+        Print "the disk will remain MBR or GPT (whatever it currently is)."
+        Pause
+        GoTo AskForOverride
+    End If
+
+    YesOrNo Override$
+    Override$ = YN$
+
+    Select Case Override$
+        Case "X"
+            Print
+            Color 14, 4: Print "Please provide a valid response.": Color 15
+            Pause
+            GoTo AskForOverride
+        Case "Y"
+            Exit Select
+        Case "N"
+            AvailableSpace = 2097152 - 2560
+    End Select
+
+End If
+
+Return
+
+
 ' ********************************************************************************************
 ' * Create a bootable Windows ISO image that can include multiple editions and architectures *
 ' ********************************************************************************************
@@ -5111,7 +6027,7 @@ Do
     Print "Enter the path to one or more Windows ISO image files. These can be x64, x86, or dual architecture. These images must"
     Print "include install.wim file(s), ";: Color 0, 10: Print "NOT";: Color 15: Print " install.esd. ";: Color 0, 10: Print "DO NOT";: Color 15: Print " include a file name or extension."
     Print
-    Input "Enter the path: ", SourceFolder$
+    Line Input "Enter the path: ", SourceFolder$
 Loop While SourceFolder$ = ""
 
 CleanPath SourceFolder$
@@ -5522,7 +6438,7 @@ Do
     Print "Enter the path where the project will be created. We will use this location to save temporary files and we will also"
     Print "save the final ISO image file here."
     Print
-    Input "Enter the path where the project should be created: ", DestinationFolder$
+    Line Input "Enter the path where the project should be created: ", DestinationFolder$
 Loop While DestinationFolder$ = ""
 
 CleanPath DestinationFolder$
@@ -5596,7 +6512,7 @@ UserSelectedImageName$ = "" ' Set initial value
 Print "If you would like to specify a name for the final ISO image file that this project will create, please do so now,"
 Print "WITHOUT an extension. You can also simply press ENTER to use the default name of Windows.ISO."
 Print
-Print "Enter name ";: Color 0, 10: Print "WITHOUT";: Color 15: Print " an extension, or press ENTER: ";: Input "", UserSelectedImageName$
+Print "Enter name ";: Color 0, 10: Print "WITHOUT";: Color 15: Print " an extension, or press ENTER: ";: Line Input "", UserSelectedImageName$
 
 If UserSelectedImageName = "" Then
     UserSelectedImageName$ = "Windows.ISO"
@@ -6115,7 +7031,7 @@ VolumeName$ = ""
 
 Do
     Cls
-    Print "Enter the path to the folder with the Windows files to make into an ISO image: ";: Input "", MakeBootablePath$
+    Print "Enter the path to the folder with the Windows files to make into an ISO image: ";: Line Input "", MakeBootablePath$
 
 Loop While MakeBootablePath$ = ""
 
@@ -6149,7 +7065,7 @@ DestinationFolder$ = "" ' Set initial value
 
 Do
     Cls
-    Print "Enter the destination path. This is the path only ";: Color 0, 10: Print "WITHOUT";: Color 15: Print " a file name: ";: Input "", DestinationFolder$
+    Print "Enter the destination path. This is the path only ";: Color 0, 10: Print "WITHOUT";: Color 15: Print " a file name: ";: Line Input "", DestinationFolder$
 Loop While DestinationFolder$ = ""
 
 CleanPath DestinationFolder$
@@ -6183,7 +7099,7 @@ DestinationFileName$ = "" ' Set initial value
 
 Do
     Cls
-    Print "Enter the name of the file to create, ";: Color 0, 10: Print "WITHOUT";: Color 15: Print " an extension: ";: Input "", DestinationFileName$
+    Print "Enter the name of the file to create, ";: Color 0, 10: Print "WITHOUT";: Color 15: Print " an extension: ";: Line Input "", DestinationFileName$
 Loop While DestinationFileName$ = ""
 
 GetVolumeName1:
@@ -6191,7 +7107,7 @@ GetVolumeName1:
 ' Get the volume name for the ISO image
 
 Cls
-Input "Enter the volume name to give the ISO image or press Enter for none: ", VolumeName$
+Line Input "Enter the volume name to give the ISO image or press Enter for none: ", VolumeName$
 
 If Len(VolumeName$) > 32 Then
     Print
@@ -6260,7 +7176,10 @@ GetImageToReorg:
 SourceImage$ = ""
 
 Cls
-Input "Please enter the full path and file name of the image to reorganize: ", SourceImage$
+Line Input "Please enter the full path and file name of the image to reorganize: ", SourceImage$
+CleanPath SourceImage$
+SourceImage$ = Temp$
+
 ReorgFileName$ = Mid$(SourceImage$, (_InStrRev(SourceImage$, "\") + 1))
 
 If Not (_FileExists(SourceImage$)) Then
@@ -6494,7 +7413,7 @@ Cls
 Print "Enter the destination path for the project. Please note that we will save the file using the same name that is has now."
 Print "If you enter the same path where the source file is located, the old file will be replaced with the updated file."
 Print
-Input "Enter the destination for the project (path only, no file name or extension): ", Destination$
+Line Input "Enter the destination for the project (path only, no file name or extension): ", Destination$
 CleanPath Destination$
 Destination$ = Temp$
 
@@ -6757,7 +7676,7 @@ Source$ = "" ' Set an initial value for the source file path
 
 Do
     Cls
-    Input "Please enter the complete path to the Windows image file to be converted: ", Source$
+    Line Input "Please enter the complete path to the Windows image file to be converted: ", Source$
 Loop While Source$ = ""
 
 CleanPath Source$
@@ -6774,7 +7693,7 @@ Do
     Print "Enter the path where the project will be created. This is where all the temporary files will be stored and we will"
     Print "save the final ISO image file here as well."
     Print
-    Input "Enter the path where the project should be created: ", DestinationFolder$
+    Line Input "Enter the path where the project should be created: ", DestinationFolder$
 Loop While DestinationFolder$ = ""
 
 CleanPath DestinationFolder$
@@ -6784,7 +7703,7 @@ FinalImageName$ = "" ' Set initial value for the final image name
 
 Do
     Cls
-    Input "Enter a name for the final image (without an extension): ", FinalImageName$
+    Line Input "Enter a name for the final image (without an extension): ", FinalImageName$
 Loop While FinalImageName$ = ""
 
 FinalImageName$ = DestinationFolder$ + "\" + FinalImageName$ + ".iso"
@@ -7013,7 +7932,7 @@ GetWimInfo:
 Do
     Cls
     Print "Enter the full path to the ISO image from which to get information."
-    Input "Include the file name and extension: ", SourcePath$
+    Line Input "Include the file name and extension: ", SourcePath$
 Loop While SourcePath$ = ""
 
 CleanPath SourcePath$
@@ -7077,7 +7996,7 @@ ArchitectureChoice$ = ""
 Do
     Cls
     Print "Enter the full path to the ISO image file that you want to work with."
-    Input "Include the file name and extension: ", SourcePath$
+    Line Input "Include the file name and extension: ", SourcePath$
 
 Loop While SourcePath$ = ""
 
@@ -7116,7 +8035,7 @@ Do
     Print "Note that you can save your updated image to the same location where the original is located."
     Print "You can even use the same file name if you want to update that file in its current location."
     Print
-    Input "Enter the destination path without a file name or extension: ", DestinationFolder$
+    Line Input "Enter the destination path without a file name or extension: ", DestinationFolder$
 Loop While DestinationFolder$ = ""
 
 CleanPath DestinationFolder$
@@ -7124,7 +8043,7 @@ DestinationFolder$ = Temp$ + "\"
 
 Do
     Cls
-    Print "Enter the name of the ISO image file to create ";: Color 0, 10: Print "WITHOUT";: Color 15: Print " an extension: ";: Input "", OutputFileName$
+    Print "Enter the name of the ISO image file to create ";: Color 0, 10: Print "WITHOUT";: Color 15: Print " an extension: ";: Line Input "", OutputFileName$
 Loop While OutputFileName$ = ""
 
 ' Get the volume name for the ISO image
@@ -7312,7 +8231,7 @@ ExportFolder$ = "" ' Set initial value
 
 Do
     Cls
-    Input "Enter the full path to the location where you want the drivers to be exported: ", ExportFolder$
+    Line Input "Enter the full path to the location where you want the drivers to be exported: ", ExportFolder$
 Loop While ExportFolder$ = ""
 
 CleanPath ExportFolder$
@@ -7420,7 +8339,7 @@ Do
     Cls
     Print "Enter the path to the .CAB files that you wish to expand. Enter the path only with no file name or extension."
     Print
-    Input "Enter the path to the drivers that are in .CAB files: ", SourceFolder$
+    Line Input "Enter the path to the drivers that are in .CAB files: ", SourceFolder$
 Loop While SourceFolder$ = ""
 
 CleanPath SourceFolder$
@@ -7490,7 +8409,7 @@ Do
     Print "Enter the destination path. Do not use the same path as the location of the .CAB files. A subfolder of that"
     Print "location is okay."
     Print
-    Input "Enter the destination path: ", DestinationFolder$
+    Line Input "Enter the destination path: ", DestinationFolder$
 Loop While DestinationFolder$ = ""
 
 CleanPath DestinationFolder$
@@ -7571,10 +8490,10 @@ Do
     Print "Please specify the location where you would like to create the Virtual Hard Disk. If the path does not exist, we will"
     Print "try to create it. ";: Color 0, 10: Print "Do not include a file name.": Color 15
     Print
-    Input "Please enter path: ", VHDXPath$
+    Line Input "Please enter path: ", VHDXPath$
 Loop While VHDXPath$ = ""
 
-' Remove quotes and trailing backslash.
+' Remove trailing backslash.
 
 CleanPath VHDXPath$
 VHDXPath$ = Temp$
@@ -7612,7 +8531,7 @@ Do
     Cls
     Print "Please provide a name for the Virtual Hard disk file. ";: Color 0, 10: Print "Do not include a file extension.": Color 15
     Print
-    Input "Enter file name: ", VHDXFileName$
+    Line Input "Enter file name: ", VHDXFileName$
 Loop While VHDXFileName$ = ""
 
 Do
@@ -7688,7 +8607,7 @@ Print "This routine will create a virtual hard disk (VHD), deploy Windows to it,
 Print "We need to know what ISO image contains the edition of Windows that you want to install to the VHD. Please provide"
 Print "the full path, ";: Color 0, 10: Print "including the file name";: Color 15: Print ", to this ISO image."
 Print
-Input "Enter the full path to the ISO image: ", SourceImage$
+Line Input "Enter the full path to the ISO image: ", SourceImage$
 CleanPath SourceImage$
 SourceImage$ = Temp$
 
@@ -7709,7 +8628,7 @@ Do
     Cls
     Print "Enter the full path to the location where we should save the VHD ";: Color 0, 10: Print "not including a filename";: Color 15: Print "."
     Print
-    Input "Enter the path: ", Destination$
+    Line Input "Enter the path: ", Destination$
 Loop While Destination$ = ""
 
 CleanPath Destination$
@@ -7768,7 +8687,7 @@ Do
     Cls
     Print "Enter the filename to assign to the VHD ";: Color 0, 10: Print "not including a file extension";: Color 15: Print "."
     Print
-    Input "Enter the filename: ", VHDFilename$
+    Line Input "Enter the filename: ", VHDFilename$
 Loop While VHDFilename$ = ""
 
 ' Build the full path including the filename
@@ -7814,7 +8733,7 @@ End If
 Cls
 Print "Enter the description to be displayed in the boot menu. Example: Win 10 Pro (VHD)"
 Print
-Input "Enter description: ", Description$
+Line Input "Enter description: ", Description$
 Cls
 Print "Please standby while we determine the architecture of the selected ISO image..."
 
@@ -7986,8 +8905,11 @@ Do
 
     ' Get the location to the files / folders that should be injected into an ISO file.
 
-    Input "Enter the path containing the data to place into an ISO image: ", SourcePath$
+    Line Input "Enter the path containing the data to place into an ISO image: ", SourcePath$
 Loop While SourcePath$ = ""
+
+CleanPath SourcePath$
+SourcePath$ = Temp$
 
 ' Verify that the path specified exists.
 
@@ -8004,7 +8926,7 @@ DestinationPath$ = "" ' Set initial value
 
 Do
     Cls
-    Input "Enter the destination path. This is the path only without a file name: ", DestinationPath$
+    Line Input "Enter the destination path. This is the path only without a file name: ", DestinationPath$
 Loop While DestinationPath$ = ""
 
 CleanPath DestinationPath$
@@ -8042,7 +8964,7 @@ DestinationFileName$ = "" ' Set initial value
 
 Do
     Cls
-    Print "Enter the name of the file to create, ";: Color 0, 10: Print "WITHOUT";: Color 15: Print " an extension: ";: Input "", DestinationFileName$
+    Print "Enter the name of the file to create, ";: Color 0, 10: Print "WITHOUT";: Color 15: Print " an extension: ";: Line Input "", DestinationFileName$
 Loop While DestinationFileName$ = ""
 
 DestinationPathAndFile$ = DestinationPath$ + DestinationFileName$ + ".iso"
@@ -8098,7 +9020,7 @@ DestinationPath$ = "" ' Set initial value
 
 Do
     Cls
-    Input "Please enter the full path to the project folder to be cleaned: ", DestinationPath$
+    Line Input "Please enter the full path to the project folder to be cleaned: ", DestinationPath$
 Loop While DestinationPath$ = ""
 
 CleanPath DestinationPath$
@@ -8156,7 +9078,7 @@ Print "    1) Inject Windows updates into one or more Windows editions and creat
 Print "    2) Inject drivers into one or more Windows editions and create a multi edition bootable image               "
 Print "    3) Inject boot-critical drivers into one or more Windows editions and create a multi edition bootable image "
 Color 0, 10
-Print "    4) Make or update a bootable drive from a Windows ISO image                                                 "
+Print "    4) Make or update a bootable drive from one or more Windows / WinPE / WinRE ISO images                      "
 Print "    5) Create a bootable Windows ISO image that can include multiple editions                                   "
 Print "    6) Create a bootable ISO image from Windows files in a folder                                               "
 Print "    7) Reorganize the contents of a Windows ISO image                                                           "
@@ -8345,6 +9267,9 @@ Print "flavors of windows are also known as "; Chr$(34); "editions"; Chr$(34); "
 Print "Windows utilities work with the index number that is associated with each edition of Windows. When an index number is"
 Print "needed, this program will assist you in determining the index number associated with the editions of Windows that you"
 Print "want to work with."
+Print
+Print "Please also note that throughout the program we use the terms "; Chr$(34); "Partition"; Chr$(34); " and "; Chr$(34); "Volume"; Chr$(34); " interchangably. While there are"
+Print "technically differences, please note that we are not differentiating between these here."
 Pause
 GoTo GeneralHelp
 
@@ -8356,7 +9281,7 @@ Print "Responding to the Program"
 Print "========================="
 Print
 Print "When the program asks for a path, you can enclose paths that have spaces in quotes if you wish, but this is not"
-Print "necessary. The program will handle paths either way."
+Print "necessary. The program will handle paths either way. Make sure that paths and filenames do NOT contain commas."
 Print
 Print "The program will allow you to paste into it, which can be especially helpful for long paths. To copy and paste a path"
 Print "do the following:"
@@ -8486,8 +9411,8 @@ Print "exclude the answer file from the original sources. One reason for this is
 Print "files on different sources and as a result the final copied answer file could potentially be from any of these sources,"
 Print "possibly an answer file you did not mean to use. There are 2 exceptions to this:"
 Print
-Print "  1) For the routine to make or update a bootable drive from a Windows ISO image, we will ask the user if they want to"
-Print "     exclude an answer file if one exists."
+Print "  1) For the routine to Make or update a bootable drive from one or more Windows / WinPE / WinRE ISO images, we will"
+Print "     ask the user if they want to exclude an answer file if one exists."
 Print
 Print "  2) For the routine that creates a bootable ISO image from files in a folder we will INCLUDE the answer file if it is"
 Print "     present since the user can simply delete it from the folder before creating the image if it is not wanted."
@@ -8977,8 +9902,7 @@ Print "details."
 Pause
 GoTo ProgramHelp
 
-' Help Topic: Make or update a bootable drive from a Windows ISO image
-' or update an already existing drive
+' Help Topic: Make or update a bootable drive from one or more Windows / WinPE / WinRE ISO images
 
 HelpMakeMultiBootImage:
 
@@ -8992,7 +9916,9 @@ Print " Version "; ProgramVersion$; "                "
 Print " Released "; ProgramReleaseDate$; "             "
 Color 0, 10
 Locate 3, 38
-Print " Program Help - Make a bootable drive from a Windows ISO image ";
+Print " Program Help - Make or update a bootable drive from one or ";
+Locate 4, 38
+Print "                more Windows / WinPE / WinRE ISO images     ";
 Locate 9, 1
 Color 15
 Print "    1) General information about this routine"
@@ -9026,8 +9952,8 @@ Pause
 
 GoTo HelpMakeMultiBootImage
 
-' Help Topic: Make or update a bootable drive from a Windows ISO image
-' or update an already existing drive > General information about this routine
+' Help Topic: Make or update a bootable drive from one or more Windows / WinPE / WinRE ISO images
+' > General information about this routine
 
 MakeBootDriveHelp:
 
@@ -9035,30 +9961,80 @@ Cls
 Print "General Information About This Routine"
 Print "======================================"
 Print
-Print "This routine will allow you to create bootable media from a bootable Windows ISO image. You will also be given the"
-Print "choice to create additional partitions on that media that can be used to store other data. If you do choose to create"
-Print "additional partitions, this routine can also BitLocker encrypt those partitions for you if you wish."
+Print "There are two options available:"
 Print
-Print "This routine uses a method to create the bootable media that should allow it to work on any system so long as that"
-Print "system allows booting from the type of media (thumb drive, SD card, external HD, SSD, etc.) that you are using. It"
-Print "should work with x86 and x64 systems, and systems that are BIOS based or UEFI based. For systems that will only boot"
-Print "from external media that is formatted with FAT, this boot method will work around the limitation of a 4 GB maximum file"
-Print "size. As a result, you do not need to break up large Windows image files into smaller pieces."
+Print "1) Create or refresh standard boot media that boots from a single Windows ISO image"
+Print "2) Create or refresh universal boot media to boot from an unlimited number of ISO images"
 Print
-Print "The first time that you make a drive bootable using this routine, you should choose the option to WIPE the disk. This"
-Print "will erase all data from the disk and properly prepare it. In the future, you can choose the REFRESH option which will"
-Print "allow you to update the media from a new ISO image but it will leave all the data on other partitions alone. This is"
-Print "perfect for larger media such as an external SSD because you can use that device as a Windows install / recovery disk,"
-Print "but you can still use the remaining space on the drive for other things without needing to ever worry about erasing"
-Print "that other data when you want to update the bootable portion of the disk. Note that when you choose to refresh a disk,"
-Print "if media previously created with this routine is found, it will be refreshed automatically without you having to choose"
-Print "what drive to update. If more than one such drive is found, then you will be asked to identify the disk to be updated."
+Print "Common to Both Options"
+Print "======================"
+Print
+Print "NOTE: I'm using the terms Partition and Volume interchangably in my descriptions below. While that is not technically"
+Print "100% accurate, consider them to be the same thing in this discussion."
+Print
+Print "Both of the available options have things in common."
+Print
+Print "Both options will create a bootable disk (USB Flash Disk, HDD, SSD, etc.) that is universal in nature. What this means"
+Print "is that the media can be boot on both x64 and x86 systems, and both BIOS and UEFI based systems. This program can be"
+Print "used to make bootable media using x64, x86, or dual architecture images and the media can use either an install.esd or"
+Print "an install.wim image file. In order to accomplish this level of compatibility we make use of two partitions on the"
+Print "media, and you can create up to two additional partitions that can be used for anything you desire. The program will"
+Print "also offer to automatically BitLocker encrypt any of the additional partitions that you create."
+Print
+Print "When you create the bootable media, you will be asked to supply a volume label for each volume that you create on the"
+Print "bootable media. For the first two volumes it is especially important that you supply a volume label that is unique"
+Print "and not used elsewhere in the system since it is used to determine the volume to be operated on."
+Pause
+Cls
+Print "Option 1: Create or refresh standard boot media that boots from a single Windows ISO image"
+Print
+Print "This option will create a standard Windows bootable drive. After this program is run, the media created by this program"
+Print "is immediately available to be booted. An option to create additional partitions on the bootble media is available."
+Print
+Print "Option 2: Create or refresh universal boot media to boot from an unlimited number of ISO images"
+Print
+Print "This option works differently. After running this program, you will have a customized Windows PE installation on the"
+Print "first volume, and a few folders on the second volume. After the disk is created, you must copy all the ISO image files"
+Print "that you wish to boot from to the ISO Images folder on the second volume. These can include Windows installation"
+Print "images, Windows recovery disks, or even WinPE and WinRE based images such as a Macrium Reflect boot disk."
+Print
+Print "As with option 1, you can create additional partitions on your media if you wish."
+Print
+Print "In addition, a folder called Other is created on the 2nd volume to allow you to keep other files readily available."
+Print
+Print "When booting for the first time from media made using this option, you will be asked to select from a list of all your"
+Print "ISO images. The first two volumes of your media will then be re-configured to boot the image that you selected. If you"
+Print "then boot from this same media again, it will boot the image that you selected."
+Print
+Print "When done, run the Restore_Disk.bat utility on the second volume to revert the disk back to the state it was in before,"
+Print "making it ready for you to select any of your images to boot again."
+Pause
+Cls
+Print "The Wipe and Refresh Selections"
+Print "==============================="
+Print
+Print "For either option that you select, you will be given a choice to Wipe or Refresh the disk. The first time you run this"
+Print "program, you need to select the Wipe option. This will completely wipe out the disk that you are creating, partitioning"
+Print "and formatting it to make certain everything works correctly. In the future, you can choose the Refresh option to"
+Print "recreate the disk while still leaving additional data and partitions intact. In the case where you have created a disk"
+Print "with a single Windows boot image, the first 2 partitions will be recreated using whatever Windows image you wish (it can"
+Print "be a totally different image than you used originally), but any additional partitions will be left undisturbed."
+Print "In other words, if you simply want to change the version of Windows this disk will boot, or if you have updated your"
+Print "image in any way, simply perform a refresh to update the image without disturbing data on other partitions."
+Print
+Print "If you created a disk allowing you to choose from multiple ISO images to boot, then a refresh operation will update the"
+Print "version of Windows PE to the version currently on your system. All the elements needed to make the disk properly boot"
+Print "will be recreated, but both the ISO Images and Other folders on the second volume will be left intact. In addition, any"
+Print "other partitions on the disk will be left alone. Be aware that for a disk created with the option to boot from a"
+Print "selection of multiple images, if you have booted that disk, you should run the Restore_Disk.bat on the 2nd partition"
+Print "to revert back to the original state before you can perform a refresh operation. If your goal is to update the images"
+Print "themselves, then simply copy the updated ISO image files to the ISO Images folder on the 2nd partition."
 Pause
 
 GoTo HelpMakeMultiBootImage
 
-' Help Topic: Make or update a bootable drive from a Windows ISO image
-' or update an already existing drive > Disk limitations
+' Help Topic: Make or update a bootable drive from one or more Windows / WinPE / WinRE ISO images
+' > Disk limitations
 
 DiskLimitationsHelp:
 
@@ -9066,15 +10042,19 @@ Cls
 Print "Disk Limitations"
 Print "================"
 Print
-Print "Be aware that for greatest compatibility, you should use media that is no larger than 2 TB in size for option 1 (MBR"
-Print "Boot Image). If you use media that is larger than 2 TB in size, the program will give you the option to initialize"
-Print "the media to 2 TB in size for the greatest compatibility, or to initialize the disk to its full capacity but sacrificing"
-Print "the ability to be booted on BIOS based systems."
+Print "Be aware that for greatest compatibility, you should use media that is no larger than 2 TB in size. If you use media"
+Print "that is larger than 2 TB in size, the program will give you the option to limit the media to 2 TB for the greatest "
+Print "compatibility, or to initialize the disk to its full capacity but sacrificing the ability to be booted on legacy"
+Print "BIOS based systems."
 Print
-Print "For option 2 (GPT Boot Image), you are not limited to a 2TB size. In addition, you can have up to 128 primary"
-Print "partitions rather than just 4. This program supports 15 partitions. Be aware that disks created in this mode only work"
-Print "with UEFI / x64 based systems."
+Print "You can use any rewritable media that your system is a able to boot from. UFD (USB Flash Disk), HDD, SD Card, are all"
+Print "examples of valid media assuming that your systems is capable of booting from that media."
+Print
+Print "Due to the frequently slow nature of some UFDs (USB Flash Drives), it is suggested that you use a UFD with a"
+Print "reasonable level of performance. Option 2 will read from and write to the same disk when configuring the media"
+Print "after selecting an image to make bootable, so faster media can make a big difference in how long this takes."
 Pause
+
 GoTo HelpMakeMultiBootImage
 
 ' Help Topic: Create a bootable Windows ISO image that can include multiple editions
@@ -10113,14 +11093,30 @@ Data C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
 ' ********************************************************************************
 
 
-Sub CleanPath (Path$)
+Sub CleanPath (Path As String)
 
-    ' Remove trailing backslash from a path
+    Dim Path1 As String
+
+    Path1$ = Path$
+
+    ' Remove quotes and trailing backslash from a path
 
     ' To use this subroutine: Pass the path to this sub, the sub will return the path
     ' without a trailing backslash in Temp$.
 
-    Temp$ = Path$
+    Dim x As Integer
+
+    ' start by stripping the quotes
+
+    Temp$ = ""
+
+    For x = 1 To Len(Path1$)
+        If Mid$(Path1$, x, 1) <> Chr$(34) Then
+            Temp$ = Temp$ + Mid$(Path1$, x, 1)
+        End If
+    Next x
+
+    ' Remove the trailing backslash, if present
 
     If Right$(Temp$, 1) = "\" Then
         Temp$ = Left$(Temp$, (Len(Temp$) - 1))
@@ -10144,27 +11140,34 @@ Sub FileTypeSearch (Path$, FileType$, SearchSubFolders$)
 
     ' Initialize the variables
 
+    Dim Path_Local As String
+    Dim FileType_Local As String
+    Dim SearchSubFolders_Local As String
     Dim Cmd As String
     Dim file As String
 
+    Path_Local$ = Path$
+    FileType_Local$ = FileType$
+    SearchSubFolders_Local = SearchSubFolders$
+
     NumberOfFiles = 0 ' Set initial value
-    FileType$ = UCase$(FileType$)
+    FileType_Local$ = UCase$(FileType_Local$)
 
     ' Build the command to be run
 
-    If FileType$ = "*" Then
-        Select Case SearchSubFolders$
+    If FileType_Local$ = "*" Then
+        Select Case SearchSubFolders_Local$
             Case "N"
-                Cmd$ = "DIR /B " + Chr$(34) + Path$ + Chr$(34) + " > WIM_TEMP.TXT"
+                Cmd$ = "DIR /B " + Chr$(34) + Path_Local$ + Chr$(34) + " > WIM_TEMP.TXT"
             Case "Y"
-                Cmd$ = "DIR /B " + Chr$(34) + Path$ + Chr$(34) + " /s" + " > WIM_TEMP.TXT"
+                Cmd$ = "DIR /B " + Chr$(34) + Path_Local$ + Chr$(34) + " /s" + " > WIM_TEMP.TXT"
         End Select
     Else
         Select Case SearchSubFolders$
             Case "N"
-                Cmd$ = "DIR /B " + Chr$(34) + Path$ + "*" + FileType$ + Chr$(34) + " > WIM_TEMP.TXT"
+                Cmd$ = "DIR /B " + Chr$(34) + Path_Local$ + "*" + FileType_Local$ + Chr$(34) + " > WIM_TEMP.TXT"
             Case "Y"
-                Cmd$ = "DIR /B " + Chr$(34) + Path$ + "*" + FileType$ + Chr$(34) + " /s" + " > WIM_TEMP.TXT"
+                Cmd$ = "DIR /B " + Chr$(34) + Path_Local$ + "*" + FileType_Local$ + Chr$(34) + " /s" + " > WIM_TEMP.TXT"
         End Select
     End If
 
@@ -10174,24 +11177,24 @@ Sub FileTypeSearch (Path$, FileType$, SearchSubFolders$)
         Open "WIM_TEMP.TXT" For Input As #1
         Do Until EOF(1)
             Line Input #1, file$
-            If FileType$ = "*" Then
+            If FileType_Local$ = "*" Then
                 If file$ <> "File Not Found" Then
                     NumberOfFiles = NumberOfFiles + 1
 
                     If Left$(file$, 1) = "-" Then
-                        TempArray$(NumberOfFiles) = "-" + Path$ + Right$(file$, (Len(file$) - 1))
+                        TempArray$(NumberOfFiles) = "-" + Path_Local$ + Right$(file$, (Len(file$) - 1))
                     Else
-                        TempArray$(NumberOfFiles) = Path$ + file$
+                        TempArray$(NumberOfFiles) = Path_Local$ + file$
                     End If
                 End If
-            ElseIf UCase$(Right$(file$, 4)) = UCase$(FileType$) Then
+            ElseIf UCase$(Right$(file$, 4)) = UCase$(FileType_Local$) Then
                 NumberOfFiles = NumberOfFiles + 1
 
                 ' In case we are injecting drivers, we would be searching for ".INF" files here. For these files, we have no reason to store the name of these files
                 ' because we don't process the files one by one. All we need for these is confirmation that .INF files exist.
 
-                If FileType$ <> ".INF" Then
-                    TempArray$(NumberOfFiles) = Path$ + file$
+                If FileType_Local$ <> ".INF" Then
+                    TempArray$(NumberOfFiles) = Path_Local$ + file$
                 End If
 
             End If
@@ -10209,18 +11212,20 @@ Sub MountISO (ImagePath$)
     ' will get the CDROM ID (Ex. \\.\CDROM0) and save in MountedImageCDROMID$. It will also
     ' get the drive letter from and save in MountedImageDriveLetter$ (Ex. E:).
 
+    Dim ImagePath_Local As String
     Dim Cmd As String
     Dim GetLine As String
     Dim count As Integer
 
+    ImagePath_Local$ = ImagePath$
     MountedImageCDROMID$ = ""
     MountedImageDriveLetter$ = ""
 
-    CleanPath (ImagePath$)
-    ImagePath$ = Temp$
-    Cmd$ = "powershell.exe -command " + Chr$(34) + "Mount-DiskImage " + Chr$(34) + "'" + ImagePath$ + "'" + Chr$(34) + Chr$(34) + " > MountInfo1.txt"
+    CleanPath (ImagePath_Local$)
+    ImagePath_Local$ = Temp$
+    Cmd$ = "powershell.exe -command " + Chr$(34) + "Mount-DiskImage " + Chr$(34) + "'" + ImagePath_Local$ + "'" + Chr$(34) + Chr$(34) + " > MountInfo1.txt"
     Shell Cmd$
-    Cmd$ = "powershell.exe -command " + Chr$(34) + "Get-DiskImage -ImagePath '" + ImagePath$ + "' | Get-Volume" + Chr$(34) + " > MountInfo2.txt"
+    Cmd$ = "powershell.exe -command " + Chr$(34) + "Get-DiskImage -ImagePath '" + ImagePath_Local$ + "' | Get-Volume" + Chr$(34) + " > MountInfo2.txt"
     Shell Cmd$
     Open "MountInfo1.txt" For Input As #1
     Open "MountInfo2.txt" For Input As #2
@@ -10572,18 +11577,25 @@ Sub DetermineArchitecture (SourcePath$, ChosenIndex)
 
     ' We need the index number without leading spaces so we are converting it to a string.
 
+    Dim SourcePath_Local As String
+    Dim ChosenIndex_Local As Integer
     Dim ChosenIndexString As String
     Dim Cmd As String
     Dim ReadLine As String
     Dim position As Integer
 
-    ChosenIndexString$ = Str$(ChosenIndex)
+    SourcePath_Local$ = SourcePath$
+    ChosenIndex_Local = ChosenIndex
+
+
+
+    ChosenIndexString$ = Str$(ChosenIndex_Local)
     ChosenIndexString$ = Right$(ChosenIndexString$, ((Len(ChosenIndexString$) - 1)))
 
     ' Clear variable
 
     MountedImageDriveLetter$ = ""
-    MountISO SourcePath$
+    MountISO SourcePath_Local$
 
     If _FileExists(MountedImageDriveLetter$ + "\x64\sources\install.wim") Then
         ImageArchitecture$ = "DUAL"
@@ -10620,7 +11632,7 @@ Sub DetermineArchitecture (SourcePath$, ChosenIndex)
 
     DetermineArchitectureExit:
 
-    Cmd$ = "powershell.exe -command " + Chr$(34) + "Dismount-DiskImage " + Chr$(34) + "'" + SourcePath$ + "'" + Chr$(34) + Chr$(34)
+    Cmd$ = "powershell.exe -command " + Chr$(34) + "Dismount-DiskImage " + Chr$(34) + "'" + SourcePath_Local$ + "'" + Chr$(34) + Chr$(34)
     Shell _Hide Cmd$
 
 End Sub
@@ -12039,8 +13051,8 @@ Sub AutounattendHandling
         Cls
         Print "This routine creates a bootable disk. If the file being used to create the disk includes an autounattend.xml"
         Print "answer file, you should be aware of the implications. Depending upon the configuration of the bootable disk,"
-        Print "booting from this disk accidentally can cause Windows setup to run with no warning, wiping out your current"
-        Print "Windows installation."
+        Print "booting from this disk accidentally can cause Windows setup to run with no warning, wiping out either your"
+        Print "current Windows installation or another disk."
         Print
         Print "To protect against this, this routine can automatically exclude the answer file if it exists."
         Pause
@@ -12130,11 +13142,11 @@ Sub EiCfgHandling
         Cls
         Print "If you have multiple editions of Windows in an image, Windows setup may not ask you which edition to install. If your"
         Print "BIOS / firmware uses a signature to indicate the edition that originally shipped with the system it may simply force"
-        Print "installation of that Windows edition. As axample, assume that you have a laptop that shipped with Windows 10 Home"
-        Print "edition preinstalled. You upgrade the system to Windows 10 Professional. Eventually you decide that that you want to"
-        Print "perform a clean install of Windows 10, or maybe even Windows 11. When you begin the installation you are given no"
-        Print "choice of what Windows edition to install. Widows setup simply proceeds to install the Home edition of Windows because"
-        Print "that is what the BIOS signature indicates was installed from the factory."
+        Print "installation of that Windows edition. As an example, assume that you have a laptop that shipped with Windows 10 Home"
+        Print "edition preinstalled. You upgrade the system to Windows 10 Professional. Yyou decide that that you want to perform a"
+        Print "clean install of Windows 10, or maybe even Windows 11. When you begin the installation you are given no choice of what"
+        Print "Windows edition to install. Windows setup simply proceeds to install the Home edition of Windows because that is what"
+        Print "the BIOS signature indicates was installed from the factory."
         Print
         Print "Injecting the EI.CFG file into your image will force setup to allow you to choose the edition of Windows to be"
         Print "installed if your image contains multiple editions."
@@ -12386,7 +13398,7 @@ Sub Scripting (Procedure$)
             Print "What is the name of the script file that you want to run?"
             Print "Enter the full path including file name and extension."
             Print
-            Input "Script File Name: ", ScriptFile$
+            Line Input "Script File Name: ", ScriptFile$
             CleanPath ScriptFile$
             ScriptFile$ = Temp$
 
@@ -13579,4 +14591,47 @@ End Sub
 '
 ' 20.1.3.208 - May 9, 2022
 ' No functional changes. Performed some extensive testing in preparation for a stable build release to GitHub.
+'
+' 20.1.4.209 - May 23, 2022
+' No functional changes. Corrected a comment that had an incorrect date and recompiled with the latest QB64pe version (0.7.1).
+'
+' 21.0.0.210 - June 8, 2022
+' Major new version. Added the ability to create a bootable disk that can contain as many different ISO images as you wish. These
+' can include various versions of Windows as well as Windows PE and Windows RE based media.
+'
+' 21.0.1.211 - June 11, 2022
+' Performed much work on the code that was just added to allow creation of multi boot images. Rather than being a whole entire
+' separate section of code, this is merged with the code to create a single image boot media. This gives us all the capabilities
+' that the single image code had such as being able to add additional partitions, choose BitLocker encryption, etc.
+'
+' 21.0.2.212 - June 12, 2022
+' Made some major changes to help topics covering the sections that were updated in the past few builds.
+'
+' 21.0.3.213 - June 13, 2022
+' Determined a way to allow an override and create GPT media for media created to boot from multiple different ISO images. The
+' code now implements this putting a multi image boot media on parity with the single images and providing all the same capabilities.
+'
+' 21.0.4.214 - June 15, 2022
+' Fixed a section of code in which responding with a path with spaces but not enclosed in quotes was not being parsed correctly.
+'
+' 21.0.5.215 - June 17, 2022
+' The program was not working with paths and filenames that contain commas. This has been corrected.
+'
+' 21.0.6.216 - July 3, 2022
+' When booting from a disk created as Windows multi image boot disk, under certain circumstances, it was possible that a couple of
+' "Access Denied" messages could be displayed and cause the user to question if everything was okay. Everything was working fine,
+' but this issue has been addressed to eliminate that concern.
+'
+' 21.0.7.217 - July 6, 2022
+' Found a logic bug in testing. When creating a multi image boot disk, we create a batch file that the user can run to restore the
+' original state of the media. We had that batch file auto delete itself after being run. This was faulty logic. That batch file
+' should not be deleted.
+'
+' 21.1.0.218 - July 7, 2022
+' Major rework of the routine to create a bootable disk with a single Windows image or multiple Windows images plus WinPE and WinRE
+' based media. Made a lot of changes to messages, fixed a lot of spelling / sentence structure issues, cleaned up status displays,
+' made interaction with the user more friendly, and more.
+'
+' 21.1.1.219 - July 11, 2022
+' No change in functionality. Simply cleaned up a user message.
 
