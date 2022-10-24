@@ -2,6 +2,36 @@
 * Changes in the Current Release *
 **********************************
 
+v21.4.0.232
+
+Improved - Performed an overhaul of the routine that creates a VHD and deploys Windows to it. This includes a bug fix and much better communication to the user of steps that they need to take.
+
+Improved - For the routine "Make or update a bootable drive from one or more Windows / WinPE / WinRE ISO images", when all operations have been completed, we display usage instructions to the user. We have improved the handling of the keyboard buffer so that key presses during execution will not cause these messages to be dismissed. We have done the same in several other locations within the code.
+
+Improved - In the routine to create a universal, bootable UFD, we made a change to create a batch file that gets saved on volume 2. That batch file allows the UFD to be custom configured without having to boot from the UFD. We also updated the text that is displayed after the UFD is created to explain how this batch file can be used.
+
+Improved - Rearchitected parts of the routine to create a bootable disk that allows for the selection from multiple ISO images. The routine now creates a single batch file that can be used to check the status of the disk, to select an image to make bootable, or to revert the disk back to the state where no image is yet selected.
+
+Improved - The method used to inject Servicing Stack Updates (SSU) has been completely rearchitected. Microsoft listed a known issue in the latest Windows patches for which a workaround is listed. That issue affects only people who inject updates into Windows images, which is a major function of this program. While the method we used still works fine, the workaround noted by Microsoft for their issue describes how Microsoft recommends installing a combined SSU / LCU update. Previously, Microsoft did not describe how to do this. As a result, we were using a method devised by trial and error. While this method works fine, we are now applying the SSU using the method described by Microsoft.
+
+Bug fix - For robocopy commands, we often have error checking code to make sure that we have not run out of space on the destination. However, the error correction was never triggered because robocopy tries over and over after a 30 second delay. To resolve this, we have added an "/r:0" to the robocopy commands to tell robocopy not to retry. This will allow the code to fall through to the error checking code.
+
+Bug fix -  Fixed some flaws in the routine to inject boot critical drivers.
+
+Distibution Change - For sake of ease, we are packaging all files other than the release notes into a single ZIP file.
+
+
+*****************************************************
+* Advanced Notice of Intent to Change Functionality *
+*****************************************************
+
+Currently, WIM Tools supports both x64 and x86 editions of Windows, allowing for the inclusion of both architecture types in the same project. With the release of Windows 11, Microsoft has eliminated support for x86 editions. At this time, we already have (and have had for quite a while already) an x64 only edition of WIM Tools, allowing for much simplification of the code. The two editions of WIM Tools are maintained side by side and have feature parity, with the exception of x86 only and dual architecture functionality. The intention is to maintain both editions up until Windows 10 goes out of support in late 2025. At that time we plan to cut over to the x64 only edition of WIM Tools and suspend further updates to the Dual Architecture edition. In the meantime, we distribute here the Dual Architecture edition to provide the greatest set of capabilities and features.
+
+
+**********************
+* Previous Releases: *
+**********************
+
 v21.1.1.219
 
 Major new version
@@ -10,23 +40,6 @@ NEW: Added the ability to create a bootable disk that can contain as many differ
 
 Bug Fix: The program was not working with paths and filenames that contain commas. This has been corrected.
 
-******************
-* Files affected *
-******************
-
-WIM_Tools.bas - QB64 Source Code
-WIM_Tools.exe - Compiled Executable
-WIM Tools User Guide.pdf (ELIMINATED - Help is now contained entirely within the program)
-
-The following files are unchanged:
-
-ISO.ico
-
-
-
-**********************
-* Previous Releases: *
-**********************
 
 v20.1.2.208
 
