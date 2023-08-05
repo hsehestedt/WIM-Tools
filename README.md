@@ -3,8 +3,8 @@ WIM (Windows Image Management) Tools is a set of tools to create, modify, and ma
 
 NOTE: You can download everything needed for this project by simply grabbing the WIM_Tools.zip. Technically, you will only need the WIM Tools.exe but the .zip file will provide the source code as well.  
 
-Version: 21.6.0.239  
-Release Date: February 21, 2023  
+Version: 22.2.2.250  
+Release Date: August 5, 2023  
 
 Please see the release notes for a list of changes.
 
@@ -21,6 +21,8 @@ Here Are Of Some Of The Things That You Can Do With WIM Tools
 - Inject Windows updates into one or more editions of Windows (Home, Pro, Education, etc.) and then combine them all into a single Windows image.
 
 - Inject drivers including boot-critical drivers into one or more editions of Windows (Home, Pro, Education, etc.) and then combine them all into a single Windows image.
+
+- Modifu the BOOT.WIM file in your Windows media to automatically bypass the Windows 11 system requirements checks.
 
 - Take a Windows image and create a bootable disk from it. This bootable disk will be bootable from BIOS and UEFI based systems, both x64 and x86, it will support files larger than 4 GB, and will boot on systems that don't like to boot from NTFS formatted media. In addition, this tool will allow for the creation of additional partitions on your media that can be optionally BitLocker encrypted. The Windows images saved can be refreshed without affecting the other partitions on the media.
 
@@ -48,11 +50,11 @@ https://docs.microsoft.com/en-us/windows-hardware/get-started/adk-install
 
 Run the program locally, not from a network location. I have not tested the program or designed it to run from a network location. 
 
-When operating on multiple editions of Windows in the same project (for example, Win 10 Pro, Home, Education editions, etc.), this program is designed to work with editions of the same version. For example, you do not want to mix version 20H2 and 21H1 in the same project. In addition, you should only create ISO images where all Windows editions are of the same build number.
+When operating on multiple editions of Windows in the same project (for example, Win 10 Pro, Home, Education editions, etc.), this program is designed to work with editions of the same version. For example, you do not want to mix version 21H2 and 22H2 in the same project. In addition, you should only create ISO images where all Windows editions are of the same build number.
 
 No additional memory beyond the standard requirements for Windows is needed.
 
-We will need a minimum of three times the amount of space your largest project requires. For example, if you are woring a 10 GB Windows image, you will need
+We will need a minimum of three times the amount of space your largest project requires. For example, if you are working with a 10 GB Windows image, you will need
 
 - About 10 GB space to extract the image to your hard disk or SSD.
 - About 10 GB of temporary storage space to assemble your final project.
@@ -78,6 +80,6 @@ This project is made up of the following files:
 WIM Tools.exe - Technically, this is the file needed.  
 WIM Tools.bas - The source code. This is a plain text file and can be compiled with the QB64 compiler which can be found at www.qb64.org.  
 WIM Tools User Guide.pdf - This file no longer exists. Everything needed is now in the online help.  
-An icon file is included should you wish to compile the program yourself using the QB64 compiler.
+An icon file is included should you wish to compile the program yourself using the QB64 Phoenix Edition compiler (see release notes).
 
 WIM_Tools.zip - Contains all the above files in a single archive.
