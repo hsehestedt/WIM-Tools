@@ -4,7 +4,7 @@
 
 You can run the provided EXE file or, if you want to make any changes or customizations, compile the .bas source file using QB64 Phoenix Edition which can be obtained here:
 
-https://github.com/QB64-Phoenix-Edition/QB64pe/releases/tag/v3.8.0
+https://github.com/QB64-Phoenix-Edition/QB64pe/releases/tag/v3.9.1
 
 It is suggested that you see the system requirements for full functionality. To do so, run the program, select option 18 from the main menu for Program help, then option 19, and finally option 1 for system requirements.
 
@@ -25,25 +25,17 @@ Note that if you use Windows defender, you only need to address item 1 as the pr
 * Changes in the Current Release *
 **********************************
 
-v22.2.2.250
+v22.3.0.260
 
-NEW FEATURE: Add the ability to update the registry settings in the BOOT.WIM to bypass Win 11 system requirement checks.
+NEW FEATURE: In the routine used to create a multiboot disk allowing selection from a list of ISO images to boot from, we now check for the availability of unattended answer files. In the same way that a user can select from a list of ISO images to boot from, you can now select from a list of answer files. Note that you can name the answer files anything you wish to make it clear what the purpose of each answer file is. Just make sure to use a .XML extension. The file selected will be copied to the root of the first partition on the media being created and will be renamed to autounattend.xml. To facilitate this, the program now creates a folder named "Answer Files" on the second partition. Drop your answer file(s) into this folder.
 
-IMPROVED: When making physical boot media, we default to creating the first partition with a size of 2.5 GB. Often, this is way more space than is needed. However, it is enough space that it can cause the second partition to be too small to hold even a single Windows image on an 8 GB disk. To resolve this, we now give the user an option to specify the size of the first partition.
+CHANGE: To avoid confusion, we now always include an EI.CFG in the final image rather than asking if an EI.CFG should be created. It was reported by users that this option was confusing. Always including the file hurts nothing so we now always include this file.
 
-IMPROVED: Made a number orf refinements and enhancements to the routine that creates a VHD and deploys a new instance of Windows to it.
+Fixed a problem in the routine used to create a multiboot disk allowing selection from a list of ISO images to boot from. There was a problem related to reliance upon the volume label of media previously created by this program. This behavior has been resolved. We now no longer rely upon the volume label at all so the user is free to change the volume label(s) at any time.
 
-IMPROVED: Made a number of refinements to how we find available drive letters. In addition, we should now be able to correctly handle corner cases where detecting drive letters in use by removable media that was BitLocker encrypted but then had a "clean" operation performed on it, did not always work properly.
+Fixed a problem that would cause setup to fail when run from Windows images created by this program. Note that booting from the media was fine and would allow for clean installation to run correctly. It was just an in place upgrade by running Setup from the installation media that was affected by this issue.
 
-IMPROVED: Completely rewrote the help that describes how to organize Windows updates for projects where updates are injected into Windows image(s).
-
-CHANGE: Remove the message that is shown the first time running the program. This message unexpectedly gets displayed again whenever the temp folder gets cleaned out, and the message is simply proving more annoying than useful.
-
-CHANGE: For the routine that injects registry changes into the BOOT.WIM to bypass Windows 11 system requirements, if a user opted to copy the final file over the source file, replacing the original source after the update, we would then delete the entire project folder. We have modified this behavior so that any ISO files that were originally located in that location would be left in place. This allows the user to use the same project folder for multiple operations such as injecting Windows updates, and then modifying the BOOT.WIM without having to remember to move the resulting ISO file every time for fear of the next operation deleting it.
-
-CHANGE: For the routine that creates a multiboot disk from which the user can select the image to be booted, we have made a few changes. If the selected image contains an autounattend.xml answer file, we no longer move it to the second volume. We leave this file on the first volume. By doing this, the answer file is deleted when we revert the disk back to the original state, rendering the disk safe to boot from. Note that it is possible that a user could manually place an autounattend.xml answer file on the second volume. In this case, for safety, when we revert the volume back to the original state, we delete this answer file if it is present and display a note to the user that any answer file that may have been present has been deleted.
-
-CHANGE: Made many refinements to the routines that create Windows bootable media and multi image boot media.
+Fixed other minor issues and updated a few messages and help for clarity.
 
 
 ****************
@@ -70,6 +62,27 @@ Currently, WIM Tools supports both x64 and x86 editions of Windows, allowing for
 * Previous Releases: Includes Release History *
 * from the Start of 2022 and Later            *
 ***********************************************
+
+v22.2.2.250
+
+NEW FEATURE: Add the ability to update the registry settings in the BOOT.WIM to bypass Win 11 system requirement checks.
+
+IMPROVED: When making physical boot media, we default to creating the first partition with a size of 2.5 GB. Often, this is way more space than is needed. However, it is enough space that it can cause the second partition to be too small to hold even a single Windows image on an 8 GB disk. To resolve this, we now give the user an option to specify the size of the first partition.
+
+IMPROVED: Made a number orf refinements and enhancements to the routine that creates a VHD and deploys a new instance of Windows to it.
+
+IMPROVED: Made a number of refinements to how we find available drive letters. In addition, we should now be able to correctly handle corner cases where detecting drive letters in use by removable media that was BitLocker encrypted but then had a "clean" operation performed on it, did not always work properly.
+
+IMPROVED: Completely rewrote the help that describes how to organize Windows updates for projects where updates are injected into Windows image(s).
+
+CHANGE: Remove the message that is shown the first time running the program. This message unexpectedly gets displayed again whenever the temp folder gets cleaned out, and the message is simply proving more annoying than useful.
+
+CHANGE: For the routine that injects registry changes into the BOOT.WIM to bypass Windows 11 system requirements, if a user opted to copy the final file over the source file, replacing the original source after the update, we would then delete the entire project folder. We have modified this behavior so that any ISO files that were originally located in that location would be left in place. This allows the user to use the same project folder for multiple operations such as injecting Windows updates, and then modifying the BOOT.WIM without having to remember to move the resulting ISO file every time for fear of the next operation deleting it.
+
+CHANGE: For the routine that creates a multiboot disk from which the user can select the image to be booted, we have made a few changes. If the selected image contains an autounattend.xml answer file, we no longer move it to the second volume. We leave this file on the first volume. By doing this, the answer file is deleted when we revert the disk back to the original state, rendering the disk safe to boot from. Note that it is possible that a user could manually place an autounattend.xml answer file on the second volume. In this case, for safety, when we revert the volume back to the original state, we delete this answer file if it is present and display a note to the user that any answer file that may have been present has been deleted.
+
+CHANGE: Made many refinements to the routines that create Windows bootable media and multi image boot media.
+
 
 v21.6.0.239
 
