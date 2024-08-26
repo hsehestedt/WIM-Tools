@@ -25,22 +25,32 @@ Note that if you use Windows defender, you only need to address item 1 as the pr
 * Changes in the Current Release *
 **********************************
 
-v22.3.0.260
+v23.0.0.261
 
-NEW FEATURE: In the routine used to create a multiboot disk allowing selection from a list of ISO images to boot from, we now check for the availability of unattended answer files. In the same way that a user can select from a list of ISO images to boot from, you can now select from a list of answer files. Note that you can name the answer files anything you wish to make it clear what the purpose of each answer file is. Just make sure to use a .XML extension. The file selected will be copied to the root of the first partition on the media being created and will be renamed to autounattend.xml. To facilitate this, the program now creates a folder named "Answer Files" on the second partition. Drop your answer file(s) into this folder.
+MAJOR CHANGE: We have accelerated our abandonment of support for 32-bit Windows. I am simply no longer seeing any demand for support of 32-bit Windows. With the upcoming end of Windows 10, we will finally be in a 64-bit only Windows environment so there is simply no sense in pushing forward with support of 32-bit OS support. If you need 32-bit support, you can continue to use version 22.3.0.260 of this program (the last version to support 32-bit Windows).
 
-CHANGE: To avoid confusion, we now always include an EI.CFG in the final image rather than asking if an EI.CFG should be created. It was reported by users that this option was confusing. Always including the file hurts nothing so we now always include this file.
+Change is Version Numbers: With the change to 64-bit only support, we are upgrading the major version number to 23.
 
-Fixed a problem in the routine used to create a multiboot disk allowing selection from a list of ISO images to boot from. There was a problem related to reliance upon the volume label of media previously created by this program. This behavior has been resolved. We now no longer rely upon the volume label at all so the user is free to change the volume label(s) at any time.
+NEW FEATURE: For multi-image boot disk projects, if an answer file is selected, we report which answer file is in use.
 
-Fixed a problem that would cause setup to fail when run from Windows images created by this program. Note that booting from the media was fine and would allow for clean installation to run correctly. It was just an in place upgrade by running Setup from the installation media that was affected by this issue.
+FIX: Creation of generic ISO images would sometimes result in media that was not readable. This has been resolved.
 
-Fixed other minor issues and updated a few messages and help for clarity.
+NEW FEATURE: Microsoft has a new type of update - The OOBE ZDP update. The program now supports this and documents it in Help.
+
+IMPROVED: Improved support for combined LCU / SSU packages.
+
+FIX: Release Preview editions of Windows 11 24H2 were not working when a boot disk was made with those images. This has been resolved.
+
+FIX: When altering the NAME and DESCRIPTION metadata for a Windows edition using this program, updating those fields for more than one edition at a time was not working. This has been resolved.
 
 
 ****************
 * Known Issues *
 ****************
+
+IMPORTANT ISSUE:
+
+Currently, you should not attempt to inject Windows updates into Windows 11 24H2 images. Windows 24H2 is not yet officially released and there are known issues with application of updates to the ISO image. Unfortunately, we do not yet have the resources available to address this until that version is fully released for Intel architecture CPUs and the first updates are released for that version.
 
 Issue:
 
@@ -50,126 +60,3 @@ Workaround:
 
 Eliminate any double spaces found in the path or file name. We'll look into this for possible resolution in a future release.
 
-
-*****************************************************
-* Advanced Notice of Intent to Change Functionality *
-*****************************************************
-
-Currently, WIM Tools supports both x64 and x86 editions of Windows, allowing for the inclusion of both architecture types in the same project. With the release of Windows 11, Microsoft has eliminated support for x86 editions. At this time, we already have (and have had for quite a while already) an x64 only edition of WIM Tools, allowing for much simplification of the code. The two editions of WIM Tools are being maintained side by side and have feature parity, with the exception of x86 only and dual architecture functionality. The intention is to maintain both editions up until Windows 10 goes out of support in late 2025. At that time we plan to cut over to the x64 only edition of WIM Tools and suspend further updates to the Dual Architecture edition. In the meantime, we distribute here the Dual Architecture edition to provide the greatest set of capabilities and features.
-
-
-***********************************************
-* Previous Releases: Includes Release History *
-* from the Start of 2022 and Later            *
-***********************************************
-
-v22.2.2.250
-
-NEW FEATURE: Add the ability to update the registry settings in the BOOT.WIM to bypass Win 11 system requirement checks.
-
-IMPROVED: When making physical boot media, we default to creating the first partition with a size of 2.5 GB. Often, this is way more space than is needed. However, it is enough space that it can cause the second partition to be too small to hold even a single Windows image on an 8 GB disk. To resolve this, we now give the user an option to specify the size of the first partition.
-
-IMPROVED: Made a number orf refinements and enhancements to the routine that creates a VHD and deploys a new instance of Windows to it.
-
-IMPROVED: Made a number of refinements to how we find available drive letters. In addition, we should now be able to correctly handle corner cases where detecting drive letters in use by removable media that was BitLocker encrypted but then had a "clean" operation performed on it, did not always work properly.
-
-IMPROVED: Completely rewrote the help that describes how to organize Windows updates for projects where updates are injected into Windows image(s).
-
-CHANGE: Remove the message that is shown the first time running the program. This message unexpectedly gets displayed again whenever the temp folder gets cleaned out, and the message is simply proving more annoying than useful.
-
-CHANGE: For the routine that injects registry changes into the BOOT.WIM to bypass Windows 11 system requirements, if a user opted to copy the final file over the source file, replacing the original source after the update, we would then delete the entire project folder. We have modified this behavior so that any ISO files that were originally located in that location would be left in place. This allows the user to use the same project folder for multiple operations such as injecting Windows updates, and then modifying the BOOT.WIM without having to remember to move the resulting ISO file every time for fear of the next operation deleting it.
-
-CHANGE: For the routine that creates a multiboot disk from which the user can select the image to be booted, we have made a few changes. If the selected image contains an autounattend.xml answer file, we no longer move it to the second volume. We leave this file on the first volume. By doing this, the answer file is deleted when we revert the disk back to the original state, rendering the disk safe to boot from. Note that it is possible that a user could manually place an autounattend.xml answer file on the second volume. In this case, for safety, when we revert the volume back to the original state, we delete this answer file if it is present and display a note to the user that any answer file that may have been present has been deleted.
-
-CHANGE: Made many refinements to the routines that create Windows bootable media and multi image boot media.
-
-
-v21.6.0.239
-
-IMPROVED - In the routine to create a universal boot disk that will allow for selection from multiple ISO images, we have eliminated the need for a user to provide a temporary location to build the WinPE image. In addition, the message that is displayed to a user the first time the program is run, suggesting the review of help and instructing what to do if the program cannot self-elevate has been revised. It will no longer be displayed after new versions of the program are installed.
-
-IMPROVED - While working with the mitigation for a Microsoft vulnerability related to BitLocker and the Windows Recovery Environment, it was discovered that Microsoft documentation regarding how WinRE.wim should be updated may not be correct. Although documented otherwise, applying the LCU to the WinRE.wim is in fact necessary, even though all indications from Microsoft are that the LCU does not apply to WinRE.wim. The program has been updated to apply the LCU in addition to the updates that are already being applied (the SSU and the SafeOS Dynamic Update).
-
-NEW FEATURE - For the routine that displays basic WIM information, we have added the ability to display the build number of both the boot.wim and winre.wim images.
-
-UPDATED - Updated the online help to reflect the latest changes and reword some passages for clarity.
-
-v21.4.0.232
-
-Improved - Performed an overhaul of the routine that creates a VHD and deploys Windows to it. This includes a bug fix and much better communication to the user of steps that they need to take.
-
-Improved - For the routine "Make or update a bootable drive from one or more Windows / WinPE / WinRE ISO images", when all operations have been completed, we display usage instructions to the user. We have improved the handling of the keyboard buffer so that key presses during execution will not cause these messages to be dismissed. We have done the same in several other locations within the code.
-
-Improved - In the routine to create a universal, bootable UFD, we made a change to create a batch file that gets saved on volume 2. That batch file allows the UFD to be custom configured without having to boot from the UFD. We also updated the text that is displayed after the UFD is created to explain how this batch file can be used.
-
-Improved - Rearchitected parts of the routine to create a bootable disk that allows for the selection from multiple ISO images. The routine now creates a single batch file that can be used to check the status of the disk, to select an image to make bootable, or to revert the disk back to the state where no image is yet selected.
-
-Improved - The method used to inject Servicing Stack Updates (SSU) has been completely rearchitected. Microsoft listed a known issue in the latest Windows patches for which a workaround is listed. That issue affects only people who inject updates into Windows images, which is a major function of this program. While the method we used still works fine, the workaround noted by Microsoft for their issue describes how Microsoft recommends installing a combined SSU / LCU update. Previously, Microsoft did not describe how to do this. As a result, we were using a method devised by trial and error. While this method works fine, we are now applying the SSU using the method described by Microsoft.
-
-Bug fix - For robocopy commands, we often have error checking code to make sure that we have not run out of space on the destination. However, the error correction was never triggered because robocopy tries over and over after a 30 second delay. To resolve this, we have added an "/r:0" to the robocopy commands to tell robocopy not to retry. This will allow the code to fall through to the error checking code.
-
-Bug fix -  Fixed some flaws in the routine to inject boot critical drivers.
-
-Distibution Change - For sake of ease, we are packaging all files other than the release notes into a single ZIP file.
-
-v21.1.1.219
-
-Major new version
-
-NEW: Added the ability to create a bootable disk that can contain as many different ISO images as you wish. These can include various versions of Windows as well as Windows PE and Windows RE based media.
-
-Bug Fix: The program was not working with paths and filenames that contain commas. This has been corrected.
-
-
-v20.1.2.208
-
-Completely revised the logging subsystem to make it simpler. Logs were sometimes being generated that were 600MB+ in size and this was getting out of hand. We have also made one small change to the behavior of the routine that converts ESD files to WIM. Since we are simply performing a conversion and not altering the image in any other way, we are no longer altering the timestamp of files when we create the final ISO image.
-
-Enhanced the auto shutdown capablity by allowing the user to request a hibernation rather than a shutdown. This will better support wake-on-LAN capabilities. Place a file named auto_shutdown.txt on the desktop to perform a shutdown when the program has finished running or an auto_hibernate.txt to hibernate. NOTE: This is used only by the routine to inject updates / drivers / boot-critical drivers into the image since these can be a long running operations.
-
-Made some changes to the program startup. When a new version of the program is run for the first time, we display a message encouraging the review of the online help.
-
-If system settings prevent the code from self-elevating (re-running itself if the program was not run as administrator), we now display a message to the user advising them to re-run the program as administrator.
-
-Bug-fix: When updates were injected into an image using a script, some messages that should be displayed to the user could be skipped. This has been fixed.
-
-Bug-fix: There was a piece of code where a wrong file name was referenced. This caused a minor cosmetic issue, no problem to program functionality was created by this.
-
-Documentation: We are eliminating the PDF documentation with this build. Everything needed is now built into the program itself so it eliminates the need for the separate documentation.
-
-v20.0.3.202
-
-Bug Fix - Introduced a bug at the last moment before posting of the last release that caused the final image to not be created. This has been fixed. 
-
-v20.0.1.200
-
-Major new release: 
-
-New Feature: Added a new feature to the menu. There are a lot of people who have ISO images using an install.esd rather than an install.wim. There are occasions where it may be difficult to obtain a release of an image with .wim and only the .esd version of the image is available. As a result, we now have the ability to convert an image with an install.esd into an image with an install.wim.
-
-This feature supports both single and dual architecture images. Please note that we currently support conversion of the entire ISO image only. Once converted to an image with a .wim, you can use the available routines in this program to create a new image with only the Windows editions that you want / require.
-
-Updated: Revised the help menu so that help topics align with the actual menu item numbers. Previously, the numbers were offset by one. For example, menu item 1 was help topic 2. The help topic numbers now align with the numbers on the main menu precisely to avoid any potential confusion.
-
-v19.3.4.197
-
-New: When using the routine to display WIM information, we now display the build number.
-
-Change: We have encountered a program that needs to access the WIM files contained in a Windows ISO image. That program fails if the .WIM extension is not in lowercase. While not technically a problem with this program, we now save all WIM files with a lowercase extension.
-
-Change: When creating an ISO image, the timestamp of files will be set to the time that the ISO image creation was started in order to allow easy identification of when that image was created. Note that when booting from media or an ISO created by the program, when Windows setup displays the list of available editions, the timestamp of those editions are NOT altered.
-
-Change: We had previously introducednew functionality to the routine for creating bootable media to allow for the creation of media that could boot multiple Operating Systems and / or WinPE / WinRE based media such as various recovery disks, etc. This routine is being removed at this time, but may be added back at a later date. There are several reasons for this:
-
-1) We have seen several occurences of BSODs with no clear understanding yet of the cause.
-2) The result looks sloppy - there is no nice boot menu and the resulting boot is also inconsistent on different systems. On some systems you will see a boot menu item for each partition (both FAT32 and NTFS) while some systems show only the FAT32 partitions. It just looks sloppy and seems a little half-baked when compared to the rest of this program.
-
-Fix: For the routine to inject Windows updates, a user can enter a path to a location with one or more Windows images, or they can enter a full path with a specific filename included. There was a logic fault when a path without a filename was entered. This has been resolved.
-
-Fix: When updates are being applied, the screen showing current status is designed to be displayed at 120 colums by 30 rows of text. If a user purposely or accidentally changes the screen size, this display will look very poor. To correct for this, with each status update we now resize the window to thew proper size.
-
-Fix: When injecting Windows updates, there was a logic flaw. At the end of the process, we were moving the install.wim to the final destination. However, this results in a significantly larger file. Rather than simply moving it, we should be exporting each index to the destination. We correctly perform a cleanup operation on the install.wim, however, the cleanup has no effect on the size until an export is performed. So, as a result of neglecting to perform the export, we miss out on the benefit of the cleanup that was performed earlier. This has now been corrected.
-
-Fix: Recently, it has been noticed that the "clean" command when issued in diskpart, would sometime fail the first time it is run. We have implemented a fix that should fix this. We have seen no problems since implementing this workaround.
-
-Other: Some minor rewording of messages and help have been made to make these easier to understand.
