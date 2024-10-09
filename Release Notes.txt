@@ -25,6 +25,15 @@ Note that if you use Windows defender, you only need to address item 1 as the pr
 * Changes in the Current Release *
 **********************************
 
+v24.0.0.262
+
+Finally! Support for Windows 11 version 24H2 is now included.
+
+
+********************
+* Previous Changes *
+********************
+
 v23.0.0.261
 
 MAJOR CHANGE: We have accelerated our abandonment of support for 32-bit Windows. I am simply no longer seeing any demand for support of 32-bit Windows. With the upcoming end of Windows 10, we will finally be in a 64-bit only Windows environment so there is simply no sense in pushing forward with support of 32-bit OS support. If you need 32-bit support, you can continue to use version 22.3.0.260 of this program (the last version to support 32-bit Windows).
@@ -47,10 +56,6 @@ FIX: When altering the NAME and DESCRIPTION metadata for a Windows edition using
 ****************
 * Known Issues *
 ****************
-
-IMPORTANT ISSUE:
-
-Currently, you should not attempt to inject Windows updates into Windows 11 24H2 images. Windows 24H2 is not yet officially released and there are known issues with application of updates to the ISO image. Unfortunately, we do not yet have the resources available to address this until that version is fully released for Intel architecture CPUs and the first updates are released for that version.
 
 Issue:
 
