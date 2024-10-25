@@ -25,14 +25,20 @@ Note that if you use Windows defender, you only need to address item 1 as the pr
 * Changes in the Current Release *
 **********************************
 
-v24.0.0.262
+v24.1.1.265
 
-Finally! Support for Windows 11 version 24H2 is now included.
+NEW FEATURE: We now have the ability to modify a Windows ISO image to make it compatible with systems that do not meet the Windows 11 requirements. This works for both clean installs as well as upgrades. Using an image that has been patched with this procedure will allow the user to install on systems not meeting requirements without taking any special action whatsoever. Note that the CPU must still support the SSE4.2 instruction set even with this procedure.
+
+Updated: Updated text on some status screens to reflect the new Checkpoint / Incremental updates scheme being used starting with Windows 11 24H2. Also updated HELP to reflect these changes.
 
 
 ********************
 * Previous Changes *
 ********************
+
+v24.0.0.262
+
+Finally! Support for Windows 11 version 24H2 is now included.
 
 v23.0.0.261
 
