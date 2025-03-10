@@ -25,6 +25,18 @@ Note that if you use Windows defender, you only need to address item 1 as the pr
 * Changes in the Current Release *
 **********************************
 
+v24.3.3.273
+
+NEW - Windows 11 24H2 introduced a new setup experience. With this update we are introducing the ability to modify the boot.wim file to force the use of the previous version of setup.
+
+NEW - When creating bootable media that allows for the selection of the ISO image to be made bootable, you will now have the ability to inject boot critical drivers.
+
+Fixed - Addressed some small issues and reworded some messages and help for clarification of some messages.
+
+********************
+* Previous Changes *
+********************
+
 v24.3.0.268
 
 Ther routine to convert an Install.esd file within an ISO image into an Install.wim file has been greatly enhanced. 
@@ -32,10 +44,6 @@ Ther routine to convert an Install.esd file within an ISO image into an Install.
 1) You can now convert in the other direction (Install.wim to Install.esd).
 
 2) You can now convert between standalone Install.esd and Install.wim files that are not located within an ISO image.
-
-********************
-* Previous Changes *
-********************
 
 v24.1.1.265
 
