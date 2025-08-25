@@ -497,7 +497,7 @@ Print "    2) Inject drivers into one or more Windows editions and create a mult
 Print "    3) Inject boot-critical drivers into one or more Windows editions and create a multi edition bootable image "
 Print "    4) Modify Windows ISO to bypass system requirements and optionally force use of previous version of setup   "
 Color 0, 10
-Print "    5) Make or update a bootable drive from one or more Windows / WinPE / WinRE ISO images                      "; 0
+Print "    5) Make or update a bootable drive from one or more Windows / WinPE / WinRE ISO images                      "
 Print "    6) Create a bootable Windows ISO image that can include multiple editions                                   "
 Print "    7) Create a bootable ISO image from Windows files in a folder                                               "
 Print "    8) Reorganize the contents of a Windows ISO image                                                           "
