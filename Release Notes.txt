@@ -4,9 +4,9 @@
 
 You can run the provided EXE file or, if you want to make any changes or customizations, compile the .bas source file using QB64 Phoenix Edition which can be obtained here:
 
-https://github.com/QB64-Phoenix-Edition/QB64pe/releases/tag/v3.9.1
+https://github.com/QB64-Phoenix-Edition/QB64pe/releases
 
-It is suggested that you see the system requirements for full functionality. To do so, run the program, select option 18 from the main menu for Program help, then option 19, and finally option 1 for system requirements.
+It is suggested that you see the system requirements for full functionality. To do so, run the program, select option 19 from the main menu for Program help, then option 20, and finally option 1 for system requirements.
 
 
 ******************
@@ -25,6 +25,28 @@ Note that if you use Windows defender, you only need to address item 1 as the pr
 * Changes in the Current Release *
 **********************************
 
+v25.0.2.281
+
+NEW - Introduced a new item on the main menu - an Answer File Generator. This is a basic answer file generator intended
+to create basic answer files with no a whole lot of extras. It will ask a series of questions and then create an answer
+file incorporating your responses. Answer files can be created for both BIOS based  systems or UEFI based systems The
+answer file can bypass Win 11 system requirements, bypass the installation of quality updates during setup, and prevent
+automatic device encryption. On a UEFI based system it can even limit the size of the Windows partition to a size that is
+specified by the user, creating a separate partition with the remaining space that is available on the disk.
+
+NEW - In addition to the answer file generator that has been added, we have added similar functionality into the routine
+that creates a multiboot disk that allows selection from a list ISO images to make bootable. If a user chooses not to
+select an unattended answer file from a list of premade answer files, it will then offer to allow the user to create
+a new answer file on the fly. This is similar to the answer file generator noted above but is implented completely
+within the Config_UFD.bat file that the user runs to configure the drive.
+
+Bug fixes - A few minor fixes were made
+
+
+********************
+* Previous Changes *
+********************
+
 v24.3.3.273
 
 NEW - Windows 11 24H2 introduced a new setup experience. With this update we are introducing the ability to modify the boot.wim file to force the use of the previous version of setup.
@@ -32,10 +54,6 @@ NEW - Windows 11 24H2 introduced a new setup experience. With this update we are
 NEW - When creating bootable media that allows for the selection of the ISO image to be made bootable, you will now have the ability to inject boot critical drivers.
 
 Fixed - Addressed some small issues and reworded some messages and help for clarification of some messages.
-
-********************
-* Previous Changes *
-********************
 
 v24.3.0.268
 
@@ -84,4 +102,5 @@ Double Spaces in File Names / Path: If you have a path or file name that has two
 Workaround:
 
 Eliminate any double spaces found in the path or file name. We'll look into this for possible resolution in a future release.
+
 
